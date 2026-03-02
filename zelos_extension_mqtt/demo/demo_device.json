@@ -1,0 +1,71 @@
+{
+  "name": "iot_gateway",
+  "events": {
+    "environment": [
+      {
+        "name": "ambient_temp",
+        "topic": "sensors/temperature/ambient",
+        "datatype": "float32",
+        "unit": "°C"
+      },
+      {
+        "name": "surface_temp",
+        "topic": "sensors/temperature/surface",
+        "datatype": "float32",
+        "unit": "°C"
+      },
+      {
+        "name": "humidity",
+        "topic": "sensors/humidity",
+        "datatype": "float32",
+        "unit": "%"
+      },
+      {
+        "name": "pressure",
+        "topic": "sensors/pressure",
+        "datatype": "float32",
+        "unit": "hPa"
+      }
+    ],
+    "power": [
+      {
+        "name": "voltage",
+        "topic": "sensors/power/voltage",
+        "datatype": "float32",
+        "unit": "V"
+      },
+      {
+        "name": "current",
+        "topic": "sensors/power/current",
+        "datatype": "float32",
+        "unit": "A"
+      },
+      {
+        "name": "power",
+        "topic": "sensors/power/watts",
+        "datatype": "float32",
+        "unit": "W"
+      }
+    ],
+    "device": [
+      {
+        "name": "uptime",
+        "topic": "device/uptime",
+        "datatype": "uint32",
+        "unit": "s"
+      },
+      {
+        "name": "error_count",
+        "topic": "device/errors",
+        "datatype": "uint32"
+      },
+      {
+        "name": "setpoint",
+        "topic": "device/setpoint",
+        "datatype": "float32",
+        "unit": "°C",
+        "writable": true
+      }
+    ]
+  }
+}

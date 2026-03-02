@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "properties": {
+    "demo": {
+      "type": "boolean",
+      "default": false,
+      "title": "Demo Mode",
+      "description": "Run with embedded broker and simulated IoT sensors",
+      "ui:widget": "toggle"
+    },
+    "host": {
+      "type": "string",
+      "default": "localhost",
+      "title": "Broker Host",
+      "ui:placeholder": "localhost or IP address"
+    },
+    "port": {
+      "type": "integer",
+      "default": 1883,
+      "minimum": 1,
+      "maximum": 65535,
+      "title": "Broker Port"
+    },
+    "client_id": {
+      "type": "string",
+      "default": "",
+      "title": "Client ID",
+      "description": "MQTT client identifier (leave empty for auto-generated)",
+      "ui:placeholder": "my-zelos-client"
+    },
+    "username": {
+      "type": "string",
+      "default": "",
+      "title": "Username",
+      "description": "Broker authentication username"
+    },
+    "password": {
+      "type": "string",
+      "default": "",
+      "title": "Password",
+      "description": "Broker authentication password",
+      "ui:widget": "password"
+    },
+    "device_map_file": {
+      "type": "string",
+      "title": "Device Map File",
+      "description": "JSON file defining MQTT topics to subscribe to",
+      "ui:widget": "file-picker",
+      "ui:options": {
+        "accept": ".json"
+      }
+    },
+    "poll_interval": {
+      "type": "number",
+      "default": 1.0,
+      "minimum": 0.1,
+      "maximum": 60.0,
+      "title": "Log Interval (seconds)",
+      "description": "How often to flush cached MQTT values to the trace"
+    },
+    "log_level": {
+      "type": "string",
+      "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
+      "default": "INFO",
+      "title": "Log Level"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "demo": { "const": false } }
+      },
+      "then": {
+        "required": ["host", "port"]
+      }
+    }
+  ]
+}

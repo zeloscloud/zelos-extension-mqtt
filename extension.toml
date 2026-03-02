@@ -1,0 +1,20 @@
+name = "MQTT"
+version = "0.1.0"
+description = "MQTT broker monitoring and IoT data collection for Zelos"
+keywords = ["mqtt", "iot", "messaging"]
+categories = ["IoT", "Industrial"]
+readme = "README.md"
+
+[zelos]
+version = ">=25.0.22-0"
+
+[config]
+schema = "config.schema.json"
+
+[runtime]
+type = "python"
+entry = "main.py"
+python_version = "3.11"
+
+[stop]
+grace_seconds = 10
