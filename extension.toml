@@ -2,7 +2,7 @@
 # See https://docs.zeloscloud.io/sdk/how-to/develop-extensions/ for full documentation
 
 name = "MQTT"
-version = "0.1.0"
+version = "0.1.1"
 description = "MQTT broker monitoring and IoT data collection for Zelos"
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-mqtt"

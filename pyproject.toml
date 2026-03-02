@@ -1,6 +1,6 @@
 [project]
 name = "zelos-extension-mqtt"
-version = "0.1.0"
+version = "0.1.1"
 description = "MQTT broker monitoring and IoT data collection for Zelos"
 authors = [{ name = "Zelos", email = "support@zeloscloud.io" }]
 readme = "README.md"
