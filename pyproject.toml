@@ -42,9 +42,6 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-required-version = ">=0.9.5"
-
 [tool.hatch.build.targets.wheel]
 packages = ["zelos_extension_mqtt"]
 
