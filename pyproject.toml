@@ -17,7 +17,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 dependencies = [
-    "zelos-sdk>=0.0.8",
+    "zelos-sdk>=0.0.13a1",
     "aiomqtt>=2.3.0",
     "amqtt>=0.11.0b1",
     "rich-click>=1.8.0",
