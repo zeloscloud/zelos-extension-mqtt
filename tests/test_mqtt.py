@@ -8,6 +8,7 @@ Tests core functionality:
 """
 
 import asyncio
+import inspect
 import json
 import socket
 import time
@@ -575,6 +576,19 @@ class TestDemoServerIntegration:
 
 class TestActions:
     """Test action methods."""
+
+    def test_action_flags(self):
+        """Pins each action's flags, so a new action or a changed flag is a deliberate choice."""
+        actual = {
+            name: (member._action.read_only, member._action.hidden)
+            for name, member in inspect.getmembers(MqttClient, inspect.isfunction)
+            if hasattr(member, "_action")
+        }
+        assert actual == {
+            "get_status": (True, True),
+            "publish_message": (False, False),
+            "subscribe_topic": (False, False),
+        }
 
     def test_get_status_disconnected(self, client):
         """Get status reports disconnected state."""

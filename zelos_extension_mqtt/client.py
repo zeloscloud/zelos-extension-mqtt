@@ -326,7 +326,9 @@ class MqttClient:
 
     # ── Actions ──────────────────────────────────────────────────────────
 
-    @zelos_sdk.action("Get Status", "View MQTT connection and message stats")
+    @zelos_sdk.action(
+        "Get Status", "View MQTT connection and message stats", read_only=True, hidden=True
+    )
     def get_status(self) -> dict[str, Any]:
         """Get current client status."""
         return {
