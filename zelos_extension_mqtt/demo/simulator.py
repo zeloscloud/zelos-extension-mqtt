@@ -29,7 +29,7 @@ class IoTSimulator:
         self.error_count = 0
         self.setpoint = 22.0
 
-    def update(self, dt: float) -> dict[str, float | int]:
+    def update(self) -> dict[str, float | int]:
         """Generate current sensor readings.
 
         Returns:
@@ -89,7 +89,6 @@ class DemoServer:
         self.host = host
         self.port = port
         self.publish_interval = publish_interval
-        self.endpoint = f"{host}:{port}"
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ready = threading.Event()
@@ -159,7 +158,7 @@ class DemoServer:
         """Connect to broker and publish simulated sensor data."""
         async with aiomqtt.Client(self.host, self.port) as client:
             while not self._stop_event.is_set():
-                values = self.simulator.update(self.publish_interval)
+                values = self.simulator.update()
                 for topic, value in values.items():
                     payload = json.dumps(value)
                     await client.publish(topic, payload.encode(), qos=0)

@@ -44,7 +44,7 @@ Define MQTT topics grouped into trace events:
       { "topic": "sensors/temp/ambient", "name": "ambient_temp", "datatype": "float32", "unit": "°C" }
     ],
     "controls": [
-      { "topic": "device/setpoint", "name": "setpoint", "datatype": "float32", "unit": "°C", "writable": true }
+      { "topic": "device/setpoint", "name": "setpoint", "datatype": "float32", "unit": "°C" }
     ]
   }
 }
@@ -56,9 +56,10 @@ Supported data types: `bool`, `uint8`, `int8`, `uint16`, `int16`, `uint32`, `int
 
 The extension provides several actions accessible from the Zelos App:
 
-- **Get Status**: View MQTT connection state, message count, and error stats
 - **Publish Message**: Send a message to any MQTT topic with configurable QoS
 - **Subscribe to Topic**: Subscribe to an additional topic at runtime (auto-traced via schema inference)
+
+**Get Status** reports the MQTT connection state, message count, and error stats. The app's action list leaves it out, and Zelos AI can still run it.
 
 ## What is MQTT?
 

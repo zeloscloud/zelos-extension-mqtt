@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Needs Zelos 26.0.10 or later.
+- The marketplace listing describes what the extension does, in the words people search for.
+- Get Status no longer shows in the app's action list; Zelos AI can still run it.
+
+## 0.1.1
+
+- The marketplace listing shows the extension's icon, author and repository, and lists it under Networking too.
+- The README is the extension's marketplace page: features, quick start, settings, device map format and actions.
+
 ## 0.1.0
 
 - Initial release

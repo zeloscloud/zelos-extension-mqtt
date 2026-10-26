@@ -1,34 +1,25 @@
-# Zelos MQTT Extension Manifest
-# See https://docs.zeloscloud.io/sdk/how-to/develop-extensions/ for full documentation
-
 name = "MQTT"
 version = "0.1.1"
-description = "MQTT broker monitoring and IoT data collection for Zelos"
+description = "Subscribe to topics on an MQTT broker and record JSON, number, boolean or text payloads as typed signals. Publish messages at QoS 0 to 2 and add topics while running. Built-in demo broker."
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-mqtt"
-homepage = "https://github.com/zeloscloud/zelos-extension-mqtt"
-keywords = ["mqtt", "iot", "messaging", "broker"]
+# At most 20 keywords and 10 categories. Marketplace search matches both, the name, description,
+# author and repository. Zelos AI sees the name, description and keywords, not the categories.
+keywords = ["mqtt", "iot", "messaging", "broker", "pub sub", "pubsub", "publish subscribe", "qos", "telemetry", "sensor", "message broker", "m2m", "json payload", "device map", "username password", "embedded broker"]
 categories = ["IoT", "Industrial", "Networking"]
-
-# File references (relative paths in archive)
 icon = "assets/icon.svg"
 readme = "README.md"
-changelog = "CHANGELOG.md"
 
-# Compatibility (optional, defaults to ^25.0.20)
 [zelos]
-version = ">=26.0.9"
+version = ">=26.0.10"
 
-# Configuration schema (enables UI in Zelos App)
 [config]
 schema = "config.schema.json"
 
-# Runtime configuration
-[runtime]
-type = "python"
+[agent]
+runtime = "python"
 entry = "main.py"
 python_version = "3.11"
 
-# Graceful shutdown configuration (optional, defaults to 10)
-[stop]
-grace_seconds = 10
+[package]
+paths = ["LICENSE", "main.py", "zelos_extension_mqtt", "CHANGELOG.md"]

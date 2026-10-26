@@ -1,21 +1,11 @@
 [project]
 name = "zelos-extension-mqtt"
 version = "0.1.1"
-description = "MQTT broker monitoring and IoT data collection for Zelos"
+description = "Subscribe to topics on an MQTT broker and record JSON, number, boolean or text payloads as typed signals. Publish messages at QoS 0 to 2 and add topics while running. Built-in demo broker."
 authors = [{ name = "Zelos", email = "support@zeloscloud.io" }]
 readme = "README.md"
-license = { text = "MIT" }
 requires-python = ">=3.11"
 keywords = ["zelos", "extension", "mqtt", "iot"]
-classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-]
 dependencies = [
     "zelos-sdk>=0.0.13a1",
     "aiomqtt>=2.3.0",
@@ -27,20 +17,22 @@ dependencies = [
 Homepage = "https://github.com/zeloscloud/zelos-extension-mqtt"
 Repository = "https://github.com/zeloscloud/zelos-extension-mqtt"
 Issues = "https://github.com/zeloscloud/zelos-extension-mqtt/issues"
-Documentation = "https://docs.zeloscloud.io/extensions"
+Documentation = "https://docs.zeloscloud.io/app/extensions/"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
-    "pytest>=8.4.2",
-    "pytest-asyncio>=0.24.0",
-    "pre-commit>=4.3.0",
-    "ruff>=0.14.2",
-    "tomli>=2.3.0; python_version < '3.11'",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.3.0",
+    "pre-commit>=4.6.2",
+    "ruff>=0.16.10",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+required-version = ">=0.9.5"
 
 [tool.hatch.build.targets.wheel]
 packages = ["zelos_extension_mqtt"]
@@ -48,11 +40,10 @@ packages = ["zelos_extension_mqtt"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--log-cli-level=INFO"
-asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
-target-version = "py311"
+target-version = 'py311'
 line-length = 100
 
 [tool.ruff.lint]
@@ -66,12 +57,3 @@ select = [
     "C4",   # flake8-comprehensions
     "PTH",  # flake8-use-pathlib
 ]
-ignore = [
-    "B008",   # function call in defaults (common in decorators)
-]
-
-[tool.ruff.lint.per-file-ignores]
-"scripts/*.py" = ["PTH123"]  # Allow open() in scripts
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"

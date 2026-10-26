@@ -1,7 +1,6 @@
 """App mode runner for the MQTT extension.
 
-Loads configuration, creates the client, registers actions, then initializes
-the SDK. Actions must be registered before zelos_sdk.init() is called.
+Loads configuration, creates the client, registers its actions and initializes the SDK.
 """
 
 from __future__ import annotations
@@ -37,11 +36,9 @@ def run_app_mode(
     """
     config = load_config()
 
-    # Apply log level
     log_level = config.get("log_level", "INFO")
     logging.getLogger().setLevel(getattr(logging, log_level, logging.INFO))
 
-    # Determine connection settings
     host = config.get("host", "localhost")
     port = int(config.get("port", 1883))
     poll_interval = float(config.get("poll_interval", 1.0))
@@ -49,14 +46,12 @@ def run_app_mode(
     username = config.get("username") or None
     password = config.get("password") or None
 
-    # Load node map
     node_map = None
     device_map_file = config.get("device_map_file")
     if device_map_file and Path(device_map_file).exists():
         node_map = NodeMap.from_file(device_map_file)
         logger.info(f"Loaded device map: {device_map_file} ({len(node_map.nodes)} nodes)")
 
-    # Demo mode: start embedded broker + simulator
     demo_server = None
     if demo or config.get("demo", False):
         demo_server = DemoServer(host="127.0.0.1", port=port, publish_interval=poll_interval)
@@ -69,7 +64,6 @@ def run_app_mode(
     if not node_map:
         node_map = NodeMap(name="mqtt")
 
-    # Create client
     client = MqttClient(
         host=host,
         port=port,
@@ -80,18 +74,14 @@ def run_app_mode(
         password=password,
     )
 
-    # Register actions BEFORE init (required for the agent to discover them)
     zelos_sdk.actions_registry.register(client)
 
-    # Initialize SDK (must come after action registration)
     zelos_sdk.init(name="zelos_extension_mqtt", actions=True)
 
-    # Add trace logging handler after init
     handler = TraceLoggingHandler("zelos_extension_mqtt_logger")
     handler.setLevel(logging.INFO)
     logging.getLogger().addHandler(handler)
 
-    # Store client ref for shutdown
     if set_client:
         set_client(client)
 

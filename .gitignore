@@ -1,40 +1,26 @@
-# Python bytecode
+# Python
 __pycache__/
 *.py[cod]
-*.pyo
-
-# Virtual environments / uv state
 .venv/
-.uv/
-.venv*/
-
-# Tooling caches
-.ty_cache/
 .pytest_cache/
 .ruff_cache/
-.coverage
-coverage.xml
-htmlcov/
 
-# Build artifacts
-build/
+# Node
+node_modules/
+
+# Build output and packages
 dist/
-*.egg-info/
-pip-wheel-metadata/
-zelos_extension_mqtt.egg-info/
-zelos-extension-mqtt-v*.tar.gz
-scripts/__pycache__/
+*.tar.gz
+actions.json
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-*.swo
-
-# OS / editor junk
+# Editors and OS
 .DS_Store
 .idea/
+*.swp
+
+# Local environment
+.env
+.envrc
 
 # Zelos
-.last_config
 config.json
