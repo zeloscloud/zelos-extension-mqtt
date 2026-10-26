@@ -42,7 +42,6 @@ class TestNode:
         assert node.qos == 0
         assert node.payload_type == "auto"
         assert node.json_key == "value"
-        assert node.writable is False
 
     def test_all_valid_datatypes(self):
         """All supported datatypes are accepted."""
@@ -77,11 +76,6 @@ class TestNode:
         """Invalid payload_type raises ValueError."""
         with pytest.raises(ValueError, match="Invalid payload_type"):
             Node(topic="t", name="n", payload_type="xml")
-
-    def test_writable_flag(self):
-        """Writable nodes are correctly flagged."""
-        node = Node(topic="t", name="n", writable=True)
-        assert node.writable is True
 
 
 class TestNodeMap:
@@ -123,50 +117,6 @@ class TestNodeMap:
         nmap = NodeMap.from_dict(data)
         assert len(nmap.nodes) == 3
 
-    def test_topics_property(self):
-        """Topics list is unique and complete."""
-        data = {
-            "events": {
-                "a": [{"topic": "t1", "name": "n1"}],
-                "b": [{"topic": "t2", "name": "n2"}],
-            }
-        }
-        nmap = NodeMap.from_dict(data)
-        assert set(nmap.topics) == {"t1", "t2"}
-
-    def test_node_by_topic(self):
-        """Lookup by topic returns correct node."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        node = nmap.node_by_topic("sensors/temperature/ambient")
-        assert node is not None
-        assert node.name == "ambient_temp"
-        assert node.unit == "°C"
-
-    def test_node_by_topic_not_found(self):
-        """Missing topic returns None."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        assert nmap.node_by_topic("nonexistent/topic") is None
-
-    def test_node_by_name(self):
-        """Lookup by name returns correct node."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        node = nmap.node_by_name("voltage")
-        assert node is not None
-        assert node.topic == "sensors/power/voltage"
-
-    def test_event_for_node(self):
-        """Event name lookup for a node works."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        node = nmap.node_by_name("voltage")
-        assert nmap.event_for_node(node) == "power"
-
-    def test_writable_nodes(self):
-        """Only writable nodes are returned."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        writable = nmap.writable_nodes()
-        assert len(writable) == 1
-        assert writable[0].name == "setpoint"
-
     def test_from_file_nonexistent_raises(self):
         """Loading from nonexistent file raises."""
         with pytest.raises(FileNotFoundError):
@@ -191,7 +141,6 @@ class TestNodeMap:
                         "qos": 1,
                         "payload_type": "json",
                         "json_key": "data",
-                        "writable": True,
                     }
                 ]
             }
@@ -203,7 +152,6 @@ class TestNodeMap:
         assert node.qos == 1
         assert node.payload_type == "json"
         assert node.json_key == "data"
-        assert node.writable is True
 
 
 # =============================================================================
@@ -311,7 +259,7 @@ class TestIoTSimulator:
     def test_update_returns_all_topics(self):
         """All expected topics are present in update output."""
         sim = IoTSimulator()
-        values = sim.update(0.5)
+        values = sim.update()
         expected_topics = {
             "sensors/temperature/ambient",
             "sensors/temperature/surface",
@@ -330,7 +278,7 @@ class TestIoTSimulator:
         """Temperature values are in reasonable range."""
         sim = IoTSimulator()
         for _ in range(50):
-            values = sim.update(0.1)
+            values = sim.update()
             assert 10.0 < values["sensors/temperature/ambient"] < 35.0
             assert 15.0 < values["sensors/temperature/surface"] < 45.0
 
@@ -338,14 +286,14 @@ class TestIoTSimulator:
         """Humidity stays within 20-95%."""
         sim = IoTSimulator()
         for _ in range(50):
-            values = sim.update(0.1)
+            values = sim.update()
             assert 20.0 <= values["sensors/humidity"] <= 95.0
 
     def test_voltage_range(self):
         """Voltage stays near nominal 12V."""
         sim = IoTSimulator()
         for _ in range(50):
-            values = sim.update(0.1)
+            values = sim.update()
             assert 10.0 < values["sensors/power/voltage"] < 14.0
 
     def test_uptime_increases(self):
@@ -354,16 +302,16 @@ class TestIoTSimulator:
         prev = 0
         for _ in range(10):
             time.sleep(0.01)
-            values = sim.update(0.01)
+            values = sim.update()
             assert values["device/uptime"] >= prev
             prev = values["device/uptime"]
 
     def test_values_change_over_time(self):
         """Simulated values actually change between updates."""
         sim = IoTSimulator()
-        v1 = sim.update(0.5)
+        v1 = sim.update()
         time.sleep(0.1)
-        v2 = sim.update(0.5)
+        v2 = sim.update()
         # At least one analog value should differ (randomness + time)
         analog_keys = [
             "sensors/temperature/ambient",
@@ -406,13 +354,12 @@ def node_map():
 def client(demo_server, node_map):
     """Create a MqttClient connected to the demo broker."""
     with patch("zelos_sdk.TraceSourceCacheLast"), patch("zelos_sdk.TraceEventFieldMetadata"):
-        c = MqttClient(
+        return MqttClient(
             host=demo_server.host,
             port=demo_server.port,
             node_map=node_map,
             poll_interval=0.5,
         )
-    return c
 
 
 class TestDemoServerIntegration:
@@ -437,7 +384,7 @@ class TestDemoServerIntegration:
             async for message in client.messages:
                 topic = str(message.topic)
                 received[topic] = message.payload
-                if len(received) >= len(node_map.topics):
+                if len(received) >= len(node_map.nodes):
                     break
                 if asyncio.get_running_loop().time() > deadline:
                     break
@@ -483,7 +430,7 @@ class TestDemoServerIntegration:
 
         assert received == test_payload
 
-    def test_client_handle_message(self, client, demo_server, node_map):
+    def test_client_handle_message(self, client):
         """MqttClient correctly parses and caches received messages."""
         # Simulate receiving a message
         mock_msg = MagicMock()
@@ -505,7 +452,7 @@ class TestDemoServerIntegration:
         client._handle_message(mock_msg)
         assert client._message_count == 0
 
-    def test_client_caches_multiple_values(self, client, node_map):
+    def test_client_caches_multiple_values(self, client):
         """Multiple messages update the cache correctly."""
         topics_and_values = [
             ("sensors/temperature/ambient", b"21.0"),
@@ -560,12 +507,12 @@ class TestDemoServerIntegration:
 
         assert len(mqtt_client._cache) >= 5, f"Only cached {len(mqtt_client._cache)} values"
 
-        # Verify types are correct
+        nodes_by_name = {node.name: node for node in node_map.nodes}
         for (_event_name, node_name), value in mqtt_client._cache.items():
-            node = node_map.node_by_name(node_name)
-            if node and "float" in node.datatype:
+            node = nodes_by_name[node_name]
+            if "float" in node.datatype:
                 assert isinstance(value, float), f"{node_name} should be float, got {type(value)}"
-            elif node and ("int" in node.datatype or "uint" in node.datatype):
+            elif "int" in node.datatype:
                 assert isinstance(value, int), f"{node_name} should be int, got {type(value)}"
 
 
@@ -617,14 +564,6 @@ class TestActions:
 
 class TestErrorHandling:
     """Test error handling and edge cases."""
-
-    @pytest.mark.asyncio
-    async def test_connect_refused(self):
-        """Connection to non-existent broker returns False."""
-        with patch("zelos_sdk.TraceSourceCacheLast"):
-            client = MqttClient(host="127.0.0.1", port=19999)
-            result = await client.connect()
-            assert result is False
 
     def test_parse_non_utf8_payload(self):
         """Non-UTF8 payload returns None."""

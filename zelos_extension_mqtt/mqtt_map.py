@@ -33,7 +33,6 @@ class Node:
     qos: int = 0
     payload_type: str = "auto"  # "auto", "json", "raw"
     json_key: str = "value"
-    writable: bool = False
 
     def __post_init__(self):
         if self.datatype not in VALID_DATATYPES:
@@ -77,7 +76,6 @@ class NodeMap:
                         qos=item.get("qos", 0),
                         payload_type=item.get("payload_type", "auto"),
                         json_key=item.get("json_key", "value"),
-                        writable=item.get("writable", False),
                     )
                 )
             events[event_name] = nodes
@@ -87,33 +85,3 @@ class NodeMap:
     def nodes(self) -> list[Node]:
         """All nodes across all events."""
         return [n for nodes in self.events.values() for n in nodes]
-
-    @property
-    def topics(self) -> list[str]:
-        """All unique topics."""
-        return list({n.topic for n in self.nodes})
-
-    def node_by_topic(self, topic: str) -> Node | None:
-        """Find a node by its MQTT topic."""
-        for node in self.nodes:
-            if node.topic == topic:
-                return node
-        return None
-
-    def node_by_name(self, name: str) -> Node | None:
-        """Find a node by its signal name."""
-        for node in self.nodes:
-            if node.name == name:
-                return node
-        return None
-
-    def event_for_node(self, node: Node) -> str | None:
-        """Find the event name that contains a given node."""
-        for event_name, nodes in self.events.items():
-            if node in nodes:
-                return event_name
-        return None
-
-    def writable_nodes(self) -> list[Node]:
-        """All nodes marked as writable."""
-        return [n for n in self.nodes if n.writable]

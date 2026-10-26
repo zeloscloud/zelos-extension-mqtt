@@ -21,17 +21,20 @@ zelos-extension-mqtt/
 │       ├── simulator.py         # Embedded MQTT broker + IoT simulator
 │       └── demo_device.json     # Demo device map (10 signals)
 └── tests/
-    └── test_mqtt.py             # 51 tests (unit + integration)
+    └── test_mqtt.py             # Unit and integration tests
 ```
 
 ## Quick Commands
 
 ```bash
 just install     # Install deps
-just check       # Lint (ruff)
+just check       # Format check and lint (ruff)
 just format      # Format (ruff)
 just test        # Run tests
-just dev         # Run in demo mode
+just run         # Run locally
+just dev-demo    # Run with the embedded broker and simulated sensors
+just demo        # Run only the demo broker
+just package     # Package for the Zelos marketplace
 ```
 
 ## Architecture

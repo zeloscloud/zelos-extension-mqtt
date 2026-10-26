@@ -65,9 +65,7 @@ class MqttClient:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._source: zelos_sdk.TraceSourceCacheLast | None = None
 
-        # Value cache: (event_name, node_name) -> value
         self._cache: dict[tuple[str, str], Any] = {}
-        # Lookup: topic -> (event_name, node)
         self._topic_lookup: dict[str, tuple[str, Node]] = {}
         # Topics subscribed at runtime (not in node map); traced via log_dict
         self._dynamic_topics: set[str] = set()
@@ -162,7 +160,6 @@ class MqttClient:
         """Process an incoming MQTT message and cache its value."""
         topic = str(message.topic)
 
-        # Dynamic topics: log directly via log_dict with schema inference
         if topic in self._dynamic_topics:
             self._handle_dynamic_message(topic, message.payload)
             return
@@ -223,27 +220,6 @@ class MqttClient:
         if self._poll_count % 10 == 0:
             logger.debug(f"Poll #{self._poll_count}, messages received: {self._message_count}")
 
-    async def connect(self) -> bool:
-        """Test connectivity to the MQTT broker.
-
-        Returns True if a connection can be established.
-        """
-        try:
-            async with aiomqtt.Client(
-                self.host,
-                self.port,
-                username=self.username,
-                password=self.password,
-            ):
-                return True
-        except (aiomqtt.MqttError, OSError) as e:
-            logger.error(f"Connection test failed: {e}")
-            return False
-
-    async def disconnect(self) -> None:
-        """Signal the client to stop. Actual cleanup happens in _run_async."""
-        self._running = False
-
     async def _subscribe_all(self, client: aiomqtt.Client) -> None:
         """Subscribe to all topics in the node map."""
         for node in self.node_map.nodes:
@@ -256,7 +232,6 @@ class MqttClient:
         self._loop = asyncio.get_running_loop()
         reconnect_interval = 3.0
 
-        # Start periodic logging task
         log_task = asyncio.create_task(self._periodic_log())
 
         try:
@@ -380,7 +355,6 @@ class MqttClient:
             )
             future.result(timeout=5.0)
 
-            # Track as dynamic if not already in the node map
             if topic not in self._topic_lookup:
                 self._dynamic_topics.add(topic)
 

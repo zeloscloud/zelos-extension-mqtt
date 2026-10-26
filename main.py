@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Zelos MQTT extension - MQTT broker monitoring and IoT data collection."""
 
 from __future__ import annotations
@@ -62,11 +61,9 @@ def cli(ctx: click.Context, demo: bool, file: Path | None) -> None:
 
 def run_app_mode(demo: bool = False, trace_file: Path | None = None) -> None:
     """Run in app mode — delegates to app runner for SDK init and client setup."""
-    # Register signal handlers
     signal.signal(signal.SIGTERM, shutdown_handler)
     signal.signal(signal.SIGINT, shutdown_handler)
 
-    # Delegate to app mode runner (handles SDK init, action registration, client lifecycle)
     from zelos_extension_mqtt.cli.app import run_app_mode as _run_app_mode
 
     _run_app_mode(demo=demo, trace_file=trace_file, set_client=_set_client)
