@@ -31,6 +31,7 @@ SDK_DATATYPE_MAP = {
     "uint64": zelos_sdk.DataType.UInt64,
     "int64": zelos_sdk.DataType.Int64,
     "float64": zelos_sdk.DataType.Float64,
+    "string": zelos_sdk.DataType.String,
 }
 
 
@@ -103,7 +104,7 @@ class MqttClient:
                 continue
             fields = []
             for node in nodes:
-                dtype = SDK_DATATYPE_MAP.get(node.datatype, zelos_sdk.DataType.Float32)
+                dtype = SDK_DATATYPE_MAP[node.datatype]
                 fields.append(zelos_sdk.TraceEventFieldMetadata(node.name, dtype, node.unit))
             self._source.add_event(event_name, fields)
 

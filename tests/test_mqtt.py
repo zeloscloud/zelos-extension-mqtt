@@ -580,3 +580,36 @@ class TestErrorHandling:
             client = MqttClient(node_map=NodeMap())
         assert len(client._topic_lookup) == 0
         assert client._message_count == 0
+
+
+# =============================================================================
+# Trace Logging Tests
+# =============================================================================
+
+
+class TestTraceLogging:
+    """Test flushing cached values to a real trace source."""
+
+    def test_string_node_logs_text_and_flush_continues(self):
+        """A string node logs its text, and the flush still logs the events after it."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "text_test",
+                "events": {
+                    "status": [{"topic": "device/state", "name": "state", "datatype": "string"}],
+                    "power": [{"topic": "sensors/voltage", "name": "voltage"}],
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        for topic, payload in [("device/state", b"running"), ("sensors/voltage", b"12.1")]:
+            message = MagicMock()
+            message.topic = topic
+            message.payload = payload
+            client._handle_message(message)
+
+        client._log_cached_values()
+
+        assert client._source.status.state.get() == "running"
+        assert client._source.power.voltage.get() == pytest.approx(12.1)
