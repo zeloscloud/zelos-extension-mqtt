@@ -11,6 +11,7 @@
 ### Fixed
 
 - The demo broker starts without errors or deprecation warnings in the log.
+- A topic mapped with `"datatype": "string"` records its text, and no longer stops recording the other events.
 
 ## 0.1.1
 
