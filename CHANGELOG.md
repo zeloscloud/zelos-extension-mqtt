@@ -8,6 +8,10 @@
 - The marketplace listing describes what the extension does, in the words people search for.
 - Get Status no longer shows in the app's action list; Zelos AI can still run it.
 
+### Fixed
+
+- The demo broker starts without errors or deprecation warnings in the log.
+
 ## 0.1.1
 
 - The marketplace listing shows the extension's icon, author and repository, and lists it under Networking too.
