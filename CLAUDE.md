@@ -48,7 +48,7 @@ just package     # Package for the Zelos marketplace
 
 - MQTT is event-driven (push), not poll-based. Messages arrive via subscription callbacks and are cached. A periodic task logs cached values to the trace source at `poll_interval`.
 - Payload parsing supports: plain numbers (`23.5`), JSON objects (`{"value": 23.5}`), and raw strings. Controlled by `payload_type` and `json_key` on each Node.
-- `DemoServer` runs broker + publisher in a background thread with its own event loop. TCP readiness is verified by socket polling, not sleep.
+- `DemoServer` runs broker + publisher in a background thread with its own event loop. `start()` returns once the broker listens: `Broker.start()` awaits its listeners.
 
 ## Testing
 

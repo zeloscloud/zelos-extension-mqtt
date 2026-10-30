@@ -11,7 +11,6 @@ import json
 import logging
 import math
 import random
-import socket
 import threading
 import time
 
@@ -99,7 +98,6 @@ class DemoServer:
         """Start broker and publisher in a background thread."""
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        # Wait for TCP readiness instead of sleeping
         if not self._ready.wait(timeout=10.0):
             raise RuntimeError("Demo server failed to start within 10s")
         logger.info(f"Demo MQTT server ready on {self.host}:{self.port}")
@@ -118,7 +116,7 @@ class DemoServer:
             self._loop.close()
 
     async def _run_async(self) -> None:
-        """Start broker, wait for readiness, then run publisher."""
+        """Start the broker, then run the publisher until stopped."""
         broker_config = {
             "listeners": {
                 "default": {
@@ -126,33 +124,19 @@ class DemoServer:
                     "bind": f"{self.host}:{self.port}",
                 }
             },
-            "sys_interval": 0,
-            "auth": {"allow-anonymous": True, "plugins": ["auth_anonymous"]},
-            "topic-check": {"enabled": False},
+            "plugins": {
+                "amqtt.plugins.authentication.AnonymousAuthPlugin": {"allow_anonymous": True},
+            },
         }
 
         broker = Broker(broker_config)
         await broker.start()
-
-        # Poll for TCP readiness
-        self._wait_for_tcp_ready()
         self._ready.set()
 
         try:
             await self._publish_loop()
         finally:
             await broker.shutdown()
-
-    def _wait_for_tcp_ready(self) -> None:
-        """Poll until the broker accepts TCP connections."""
-        for _ in range(100):
-            try:
-                sock = socket.create_connection((self.host, self.port), timeout=0.1)
-                sock.close()
-                return
-            except OSError:
-                time.sleep(0.05)
-        raise RuntimeError(f"Broker not accepting connections on {self.host}:{self.port}")
 
     async def _publish_loop(self) -> None:
         """Connect to broker and publish simulated sensor data."""

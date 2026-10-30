@@ -365,10 +365,11 @@ def client(demo_server, node_map):
 class TestDemoServerIntegration:
     """Integration tests using real MQTT broker."""
 
-    def test_broker_accepts_connections(self, demo_server):
-        """Broker is reachable and accepts TCP connections."""
-        sock = socket.create_connection((demo_server.host, demo_server.port), timeout=2.0)
-        sock.close()
+    @pytest.mark.asyncio
+    async def test_broker_accepts_connections(self, demo_server):
+        """Broker accepts an MQTT connection as soon as start() returns."""
+        async with aiomqtt.Client(demo_server.host, demo_server.port):
+            pass
 
     @pytest.mark.asyncio
     async def test_subscribe_and_receive(self, demo_server, node_map):

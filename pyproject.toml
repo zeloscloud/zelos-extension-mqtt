@@ -9,7 +9,7 @@ keywords = ["zelos", "extension", "mqtt", "iot"]
 dependencies = [
     "zelos-sdk>=0.0.13a1",
     "aiomqtt>=2.3.0",
-    "amqtt>=0.11.0b1",
+    "amqtt>=0.11.2",
     "rich-click>=1.8.0",
 ]
 
