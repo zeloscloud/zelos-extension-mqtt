@@ -12,6 +12,7 @@
 
 - The demo broker starts without errors or deprecation warnings in the log.
 - A topic mapped with `"datatype": "string"` records its text, and no longer stops recording the other events.
+- Every device map entry on a topic records its message, so two entries can read different JSON keys of one topic.
 
 ## 0.1.1
 
