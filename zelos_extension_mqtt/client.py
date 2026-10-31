@@ -68,6 +68,7 @@ class MqttClient:
 
         self._cache: dict[tuple[str, str], Any] = {}
         self._topic_lookup: dict[str, list[tuple[str, Node]]] = {}
+        self._wildcard_lookup: list[tuple[str, tuple[str, Node]]] = []
         # Topics subscribed at runtime (not in node map); traced via log_dict
         self._dynamic_topics: set[str] = set()
 
@@ -78,11 +79,25 @@ class MqttClient:
         self._build_topic_lookup()
 
     def _build_topic_lookup(self) -> None:
-        """Build topic -> [(event_name, node)] lookup from node map."""
+        """Build the exact-topic and wildcard-topic lookups of (event_name, node) from node map."""
         self._topic_lookup = {}
+        self._wildcard_lookup = []
         for event_name, nodes in self.node_map.events.items():
             for node in nodes:
-                self._topic_lookup.setdefault(node.topic, []).append((event_name, node))
+                if "+" in node.topic or "#" in node.topic:
+                    self._wildcard_lookup.append((node.topic, (event_name, node)))
+                else:
+                    self._topic_lookup.setdefault(node.topic, []).append((event_name, node))
+
+    def _find_nodes(self, topic: str) -> list[tuple[str, Node]]:
+        """Find every node a received topic records into, by exact or wildcard topic."""
+        matches = list(self._topic_lookup.get(topic, []))
+        if self._wildcard_lookup:
+            received = aiomqtt.Topic(topic)
+            matches += [
+                entry for wildcard, entry in self._wildcard_lookup if received.matches(wildcard)
+            ]
+        return matches
 
     def _init_trace_source(self) -> None:
         """Create Zelos trace source from node map."""
@@ -161,12 +176,16 @@ class MqttClient:
         """Process an incoming MQTT message and cache its value."""
         topic = str(message.topic)
 
+        # An exact runtime topic records as its own event, even where a wildcard node matches it
         if topic in self._dynamic_topics:
             self._handle_dynamic_message(topic, message.payload)
             return
 
-        matches = self._topic_lookup.get(topic)
+        matches = self._find_nodes(topic)
         if not matches:
+            received = aiomqtt.Topic(topic)
+            if any(received.matches(wildcard) for wildcard in self._dynamic_topics):
+                self._handle_dynamic_message(topic, message.payload)
             return
 
         recorded = False
@@ -346,8 +365,9 @@ class MqttClient:
         """Subscribe to an additional MQTT topic at runtime.
 
         If the topic is already in the node map, messages are handled normally.
-        Otherwise, messages are traced via log_dict with schema inferred from
-        the payload.
+        Otherwise, messages are traced via log_dict, one event per received topic,
+        with schema inferred from the payload; a wildcard topic leaves the messages
+        a node map entry matches to that entry.
         """
         if not self._connected or not self._mqtt_client or not self._loop:
             return {"error": "Not connected to broker", "success": False}
