@@ -369,6 +369,17 @@ def client(demo_server, node_map):
 class TestDemoServerIntegration:
     """Integration tests using real MQTT broker."""
 
+    def test_broker_logs_only_its_own_lines(self, caplog):
+        """The embedded broker's connection and state machine lines stay out of the log."""
+        import logging
+
+        server = DemoServer(host="127.0.0.1", port=_find_free_port(), publish_interval=0.1)
+        with caplog.at_level(logging.INFO):
+            server.start()
+            time.sleep(0.3)
+            server.stop()
+        assert {r.name for r in caplog.records} == {"zelos_extension_mqtt.demo.simulator"}
+
     @pytest.mark.asyncio
     async def test_broker_accepts_connections(self, demo_server):
         """Broker accepts an MQTT connection as soon as start() returns."""
