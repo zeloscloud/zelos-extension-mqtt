@@ -6,11 +6,12 @@ Loads configuration, creates the client, registers its actions and initializes t
 from __future__ import annotations
 
 import logging
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import zelos_sdk
-from zelos_sdk.extensions import load_config
+from zelos_sdk.extensions import ConfigValidationError, load_config
 from zelos_sdk.hooks.logging import TraceLoggingHandler
 
 from zelos_extension_mqtt.client import MqttClient
@@ -34,7 +35,11 @@ def run_app_mode(
         trace_file: Optional path to write trace data to a .trz file.
         set_client: Callback to store client reference for shutdown handling.
     """
-    config = load_config()
+    try:
+        config = load_config()
+    except ConfigValidationError as e:
+        logger.error("Invalid configuration: %s", "; ".join(m.strip(" •") for m in e.errors))
+        sys.exit(1)
 
     log_level = config.get("log_level", "INFO")
     logging.getLogger().setLevel(getattr(logging, log_level, logging.INFO))
