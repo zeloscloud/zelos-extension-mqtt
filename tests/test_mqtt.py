@@ -821,3 +821,20 @@ class TestLogSource:
 
         assert client.source.logs.value.get() == 2
         assert client._message_count == 1
+
+
+def test_saved_config_off_the_schema_exits(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"port": 0}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    with pytest.raises(SystemExit) as exc:
+        app.run_app_mode()
+    assert exc.value.code == 1
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
+        "Invalid configuration: port: 0 is less than the minimum of 1"
+    ]
