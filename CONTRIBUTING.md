@@ -1,150 +1,108 @@
 # Contributing
 
-## Development Workflow
+## Prerequisites
+
+- [Zelos](https://zeloscloud.io) 26.0.10 or later
+- [Zelos CLI](https://docs.zeloscloud.io/getting-started/install-cli/) 0.1.12 or later
+- [just](https://github.com/casey/just)
+- [uv](https://docs.astral.sh/uv/)
+
+## Layout
+
+`extension.toml` describes everything the extension contributes:
+
+| Part | Files | Manifest |
+| ---- | ----- | -------- |
+| Agent runtime | `main.py`, the Python package, `pyproject.toml`, `config.schema.json` | `[agent]`, `[config]` |
+
+```
+main.py                       # CLI: app mode (default, `--demo`, `--file`) and `demo`
+zelos_extension_mqtt/
+  client.py                   # MqttClient: subscribes to topics, writes trace events, registers actions
+  mqtt_map.py                 # Node and NodeMap: topics, payload types and events
+  cli/app.py                  # App mode runner
+  demo/simulator.py           # Embedded amqtt broker and sensor simulator
+  demo/demo_device.json       # Device map for the simulator
+tests/test_mqtt.py            # Unit and integration tests
+```
+
+## Commands
+
+| Command                | Description                                                     |
+| ---------------------- | --------------------------------------------------------------- |
+| `just install`         | Install dependencies and the pre-commit hooks                   |
+| `just format`          | Format code with ruff                                           |
+| `just check`           | Check formatting and lint (ruff)                                |
+| `just test`            | Run tests (pytest)                                              |
+| `just package`         | Package for the Zelos marketplace                               |
+| `just release VERSION` | Bump version, check, test, commit, tag                          |
+| `just clean`           | Remove build output, caches and packages                        |
+| `just run`             | Run the extension against `./config.json`                       |
+| `just dev-demo`        | Run the extension with an embedded broker and simulated sensors |
+| `just demo`            | Run only the demo broker, on `127.0.0.1:11883`                  |
+
+`just --list` also shows the recipes each part adds. `just install` installs the
+pre-commit hooks in `.pre-commit-config.yaml`.
+
+## Run it in Zelos
 
 ```bash
-just install  # Install dependencies and setup
-just dev      # Run locally
-just test     # Run tests
-just check    # Lint code
+zelos extensions install-local .
+zelos extensions start local.mqtt --config '{"demo": true}'
+zelos extensions logs local.mqtt
 ```
 
-1. Make your changes
-2. Run `just format` to auto-format
-3. Run `just test` to verify tests pass
-4. Commit your changes (pre-commit hooks run automatically)
+A local install runs from your project directory, so you do not install again after a code
+change:
 
-## Project Structure
+- Agent runtime: stop and start the extension. After a dependency change, stop it and run
+  `zelos extensions reinstall local.mqtt`.
+- `extension.toml`: run `zelos extensions install-local .` again.
 
-```
-zelos-extension-mqtt/
-├── extension.toml                  # Extension metadata and version
-├── config.schema.json              # Configuration UI schema
-├── main.py                         # Entry point
-├── pyproject.toml                  # Python dependencies
-├── uv.lock                         # Locked dependency versions
-├── Justfile                        # Development commands
-├── LICENSE                         # MIT License
-├── README.md                       # User documentation
-├── CHANGELOG.md                    # Version history
-├── CONTRIBUTING.md                 # This file
-├── .pre-commit-config.yaml         # Git hook configuration
-├── .gitignore                      # Git ignore rules
-├── zelos_extension_mqtt/           # Extension package
-│   ├── __init__.py
-│   ├── client.py                   # MQTT client with SDK trace integration
-│   ├── mqtt_map.py                 # Topic-to-signal mapping (NodeMap)
-│   ├── cli/
-│   │   ├── __init__.py
-│   │   └── app.py                  # App mode runner
-│   └── demo/
-│       ├── __init__.py
-│       ├── simulator.py            # Embedded broker + IoT simulator
-│       └── demo_device.json        # Demo device map
-├── tests/                          # Test suite
-│   ├── __init__.py
-│   └── test_mqtt.py
-├── scripts/                        # Build and release scripts
-│   ├── package_extension.py        # Creates marketplace tarball
-│   └── bump_version.py             # Updates version numbers
-├── assets/                         # Icons and media
-│   └── logo.svg                    # Marketplace icon
-├── .github/                        # GitHub automation
-│   ├── workflows/
-│   │   ├── CI.yml                  # Run tests on PR
-│   │   └── release.yml             # Publish releases
-│   └── dependabot.yml              # Dependency updates
-└── .vscode/                        # VSCode settings
-    ├── settings.json
-    └── extensions.json
-```
-
-## Common Tasks
-
-### Run Locally
+To run it outside the agent's process management, write a `config.json` and run `just run`.
+It connects to the agent at `ZELOS_AGENT_URL`, else `http://localhost:2300`:
 
 ```bash
-just dev       # Run with default config
-just dev-demo  # Run with embedded broker + simulated sensors
-just demo      # Run standalone demo broker only
+echo '{"demo": true}' > config.json
+just run
 ```
 
-Press Ctrl+C to stop.
+## Demo mode
 
-### Add a Dependency
+Demo mode starts an embedded broker with simulated sensors and connects to it. It needs no broker.
+Turn it on with `"demo": true` in the config, or run `just dev-demo`. The broker listens on the
+configured `port`, 1883 by default. `just demo` runs only the broker, with no extension and no Zelos.
 
-```bash
-uv add package-name        # Runtime dependency
-uv add --dev package-name  # Dev dependency
-```
+## Testing
 
-### Package for Marketplace
+The tests start the embedded broker on a free localhost port and publish through it. They need no network.
+
+## Packaging
 
 ```bash
 just package
 ```
 
-This creates a `.tar.gz` file ready to upload to the Zelos Marketplace (automatically happens in CI!)
+The archive lands next to `extension.toml` as `<name>-<version>.tar.gz`, where `<name>` is the
+manifest name in lowercase with every other run of characters turned into one hyphen. It holds
+`extension.toml`, the README, the icon, the config schema and the paths listed in
+`[package] paths`. With an agent runtime it also holds `pyproject.toml`, `uv.lock` and
+`actions.json`, the list of actions that run while the extension is stopped.
 
-### Create a Release
+## Release
+
+Add the release to `CHANGELOG.md` and commit it, then:
 
 ```bash
 just release 1.0.0
 git push --follow-tags
 ```
 
-This updates version numbers, runs tests, and creates a git tag.
+The release workflow checks, tests and packages the extension, then attaches the archive to a
+GitHub release. CI runs the same check, test and package steps on every push and pull request.
 
-## Testing
-
-### Write Tests
-
-```python
-# tests/test_feature.py
-from zelos_extension_mqtt.client import MqttClient
-
-def test_something():
-    client = MqttClient(host="127.0.0.1", port=11883)
-    assert client.host == "127.0.0.1"
-```
-
-### Run Tests
-
-```bash
-just test           # Run all tests
-uv run pytest -v    # Verbose output
-uv run pytest -k test_name  # Run specific test
-```
-
-## Code Quality
-
-### Formatting & Linting
-
-```bash
-just format  # Auto-fix formatting
-just check   # Check for issues
-```
-
-Pre-commit hooks run automatically on `git commit` and will:
-- Format code with ruff
-- Check for common issues
-- Validate YAML/TOML/JSON files
-
-### Type Hints
-
-Use type hints on all function signatures:
-
-```python
-def my_function(name: str, count: int) -> list[str]:
-    return [name] * count
-```
-
-## Getting Help
-
-- [Zelos Docs](https://docs.zeloscloud.io)
-- [SDK Guide](https://docs.zeloscloud.io/sdk)
-- [GitHub Issues](https://github.com/zeloscloud/zelos-extension-mqtt/issues)
-
-## License
-
-MIT - see [LICENSE](LICENSE)
+To list the extension in the Zelos marketplace, once: push the project to a GitHub repository,
+submit it at [marketplace.zeloscloud.io](https://marketplace.zeloscloud.io/), and install the
+Zelos GitHub App on the repository when asked. After approval, every release you publish reaches
+the marketplace. See
+[Publish to the Marketplace](https://docs.zeloscloud.io/sdk/how-to/package-extensions/#publish-to-the-marketplace).

@@ -11,7 +11,6 @@ import json
 import logging
 import math
 import random
-import socket
 import threading
 import time
 
@@ -29,7 +28,7 @@ class IoTSimulator:
         self.error_count = 0
         self.setpoint = 22.0
 
-    def update(self, dt: float) -> dict[str, float | int]:
+    def update(self) -> dict[str, float | int]:
         """Generate current sensor readings.
 
         Returns:
@@ -89,7 +88,6 @@ class DemoServer:
         self.host = host
         self.port = port
         self.publish_interval = publish_interval
-        self.endpoint = f"{host}:{port}"
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ready = threading.Event()
@@ -98,9 +96,11 @@ class DemoServer:
 
     def start(self) -> None:
         """Start broker and publisher in a background thread."""
+        # amqtt logs every connection, and its state machine every transition, at INFO
+        for name in ("amqtt", "transitions"):
+            logging.getLogger(name).setLevel(logging.WARNING)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        # Wait for TCP readiness instead of sleeping
         if not self._ready.wait(timeout=10.0):
             raise RuntimeError("Demo server failed to start within 10s")
         logger.info(f"Demo MQTT server ready on {self.host}:{self.port}")
@@ -119,7 +119,7 @@ class DemoServer:
             self._loop.close()
 
     async def _run_async(self) -> None:
-        """Start broker, wait for readiness, then run publisher."""
+        """Start the broker, then run the publisher until stopped."""
         broker_config = {
             "listeners": {
                 "default": {
@@ -127,16 +127,13 @@ class DemoServer:
                     "bind": f"{self.host}:{self.port}",
                 }
             },
-            "sys_interval": 0,
-            "auth": {"allow-anonymous": True, "plugins": ["auth_anonymous"]},
-            "topic-check": {"enabled": False},
+            "plugins": {
+                "amqtt.plugins.authentication.AnonymousAuthPlugin": {"allow_anonymous": True},
+            },
         }
 
         broker = Broker(broker_config)
         await broker.start()
-
-        # Poll for TCP readiness
-        self._wait_for_tcp_ready()
         self._ready.set()
 
         try:
@@ -144,22 +141,11 @@ class DemoServer:
         finally:
             await broker.shutdown()
 
-    def _wait_for_tcp_ready(self) -> None:
-        """Poll until the broker accepts TCP connections."""
-        for _ in range(100):
-            try:
-                sock = socket.create_connection((self.host, self.port), timeout=0.1)
-                sock.close()
-                return
-            except OSError:
-                time.sleep(0.05)
-        raise RuntimeError(f"Broker not accepting connections on {self.host}:{self.port}")
-
     async def _publish_loop(self) -> None:
         """Connect to broker and publish simulated sensor data."""
         async with aiomqtt.Client(self.host, self.port) as client:
             while not self._stop_event.is_set():
-                values = self.simulator.update(self.publish_interval)
+                values = self.simulator.update()
                 for topic, value in values.items():
                     payload = json.dumps(value)
                     await client.publish(topic, payload.encode(), qos=0)

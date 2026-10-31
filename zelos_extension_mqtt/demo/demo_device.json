@@ -63,8 +63,7 @@
         "name": "setpoint",
         "topic": "device/setpoint",
         "datatype": "float32",
-        "unit": "°C",
-        "writable": true
+        "unit": "°C"
       }
     ]
   }

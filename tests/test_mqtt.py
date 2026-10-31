@@ -42,7 +42,6 @@ class TestNode:
         assert node.qos == 0
         assert node.payload_type == "auto"
         assert node.json_key == "value"
-        assert node.writable is False
 
     def test_all_valid_datatypes(self):
         """All supported datatypes are accepted."""
@@ -78,11 +77,6 @@ class TestNode:
         with pytest.raises(ValueError, match="Invalid payload_type"):
             Node(topic="t", name="n", payload_type="xml")
 
-    def test_writable_flag(self):
-        """Writable nodes are correctly flagged."""
-        node = Node(topic="t", name="n", writable=True)
-        assert node.writable is True
-
 
 class TestNodeMap:
     """Test NodeMap parsing and lookup."""
@@ -105,6 +99,10 @@ class TestNodeMap:
         assert len(nmap.events["temperature"]) == 1
         assert len(nmap.events["power"]) == 2
 
+    def test_log_event_name_is_reserved(self):
+        with pytest.raises(ValueError, match="'log' is reserved"):
+            NodeMap.from_dict({"events": {"log": [{"topic": "a/b", "name": "x"}]}})
+
     def test_from_file(self):
         """Node map loads correctly from demo device JSON."""
         nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
@@ -122,50 +120,6 @@ class TestNodeMap:
         }
         nmap = NodeMap.from_dict(data)
         assert len(nmap.nodes) == 3
-
-    def test_topics_property(self):
-        """Topics list is unique and complete."""
-        data = {
-            "events": {
-                "a": [{"topic": "t1", "name": "n1"}],
-                "b": [{"topic": "t2", "name": "n2"}],
-            }
-        }
-        nmap = NodeMap.from_dict(data)
-        assert set(nmap.topics) == {"t1", "t2"}
-
-    def test_node_by_topic(self):
-        """Lookup by topic returns correct node."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        node = nmap.node_by_topic("sensors/temperature/ambient")
-        assert node is not None
-        assert node.name == "ambient_temp"
-        assert node.unit == "°C"
-
-    def test_node_by_topic_not_found(self):
-        """Missing topic returns None."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        assert nmap.node_by_topic("nonexistent/topic") is None
-
-    def test_node_by_name(self):
-        """Lookup by name returns correct node."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        node = nmap.node_by_name("voltage")
-        assert node is not None
-        assert node.topic == "sensors/power/voltage"
-
-    def test_event_for_node(self):
-        """Event name lookup for a node works."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        node = nmap.node_by_name("voltage")
-        assert nmap.event_for_node(node) == "power"
-
-    def test_writable_nodes(self):
-        """Only writable nodes are returned."""
-        nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
-        writable = nmap.writable_nodes()
-        assert len(writable) == 1
-        assert writable[0].name == "setpoint"
 
     def test_from_file_nonexistent_raises(self):
         """Loading from nonexistent file raises."""
@@ -191,7 +145,6 @@ class TestNodeMap:
                         "qos": 1,
                         "payload_type": "json",
                         "json_key": "data",
-                        "writable": True,
                     }
                 ]
             }
@@ -203,7 +156,6 @@ class TestNodeMap:
         assert node.qos == 1
         assert node.payload_type == "json"
         assert node.json_key == "data"
-        assert node.writable is True
 
 
 # =============================================================================
@@ -311,7 +263,7 @@ class TestIoTSimulator:
     def test_update_returns_all_topics(self):
         """All expected topics are present in update output."""
         sim = IoTSimulator()
-        values = sim.update(0.5)
+        values = sim.update()
         expected_topics = {
             "sensors/temperature/ambient",
             "sensors/temperature/surface",
@@ -330,7 +282,7 @@ class TestIoTSimulator:
         """Temperature values are in reasonable range."""
         sim = IoTSimulator()
         for _ in range(50):
-            values = sim.update(0.1)
+            values = sim.update()
             assert 10.0 < values["sensors/temperature/ambient"] < 35.0
             assert 15.0 < values["sensors/temperature/surface"] < 45.0
 
@@ -338,14 +290,14 @@ class TestIoTSimulator:
         """Humidity stays within 20-95%."""
         sim = IoTSimulator()
         for _ in range(50):
-            values = sim.update(0.1)
+            values = sim.update()
             assert 20.0 <= values["sensors/humidity"] <= 95.0
 
     def test_voltage_range(self):
         """Voltage stays near nominal 12V."""
         sim = IoTSimulator()
         for _ in range(50):
-            values = sim.update(0.1)
+            values = sim.update()
             assert 10.0 < values["sensors/power/voltage"] < 14.0
 
     def test_uptime_increases(self):
@@ -354,16 +306,16 @@ class TestIoTSimulator:
         prev = 0
         for _ in range(10):
             time.sleep(0.01)
-            values = sim.update(0.01)
+            values = sim.update()
             assert values["device/uptime"] >= prev
             prev = values["device/uptime"]
 
     def test_values_change_over_time(self):
         """Simulated values actually change between updates."""
         sim = IoTSimulator()
-        v1 = sim.update(0.5)
+        v1 = sim.update()
         time.sleep(0.1)
-        v2 = sim.update(0.5)
+        v2 = sim.update()
         # At least one analog value should differ (randomness + time)
         analog_keys = [
             "sensors/temperature/ambient",
@@ -406,22 +358,33 @@ def node_map():
 def client(demo_server, node_map):
     """Create a MqttClient connected to the demo broker."""
     with patch("zelos_sdk.TraceSourceCacheLast"), patch("zelos_sdk.TraceEventFieldMetadata"):
-        c = MqttClient(
+        return MqttClient(
             host=demo_server.host,
             port=demo_server.port,
             node_map=node_map,
             poll_interval=0.5,
         )
-    return c
 
 
 class TestDemoServerIntegration:
     """Integration tests using real MQTT broker."""
 
-    def test_broker_accepts_connections(self, demo_server):
-        """Broker is reachable and accepts TCP connections."""
-        sock = socket.create_connection((demo_server.host, demo_server.port), timeout=2.0)
-        sock.close()
+    def test_broker_logs_only_its_own_lines(self, caplog):
+        """The embedded broker's connection and state machine lines stay out of the log."""
+        import logging
+
+        server = DemoServer(host="127.0.0.1", port=_find_free_port(), publish_interval=0.1)
+        with caplog.at_level(logging.INFO):
+            server.start()
+            time.sleep(0.3)
+            server.stop()
+        assert {r.name for r in caplog.records} == {"zelos_extension_mqtt.demo.simulator"}
+
+    @pytest.mark.asyncio
+    async def test_broker_accepts_connections(self, demo_server):
+        """Broker accepts an MQTT connection as soon as start() returns."""
+        async with aiomqtt.Client(demo_server.host, demo_server.port):
+            pass
 
     @pytest.mark.asyncio
     async def test_subscribe_and_receive(self, demo_server, node_map):
@@ -437,7 +400,7 @@ class TestDemoServerIntegration:
             async for message in client.messages:
                 topic = str(message.topic)
                 received[topic] = message.payload
-                if len(received) >= len(node_map.topics):
+                if len(received) >= len(node_map.nodes):
                     break
                 if asyncio.get_running_loop().time() > deadline:
                     break
@@ -483,7 +446,7 @@ class TestDemoServerIntegration:
 
         assert received == test_payload
 
-    def test_client_handle_message(self, client, demo_server, node_map):
+    def test_client_handle_message(self, client):
         """MqttClient correctly parses and caches received messages."""
         # Simulate receiving a message
         mock_msg = MagicMock()
@@ -505,7 +468,7 @@ class TestDemoServerIntegration:
         client._handle_message(mock_msg)
         assert client._message_count == 0
 
-    def test_client_caches_multiple_values(self, client, node_map):
+    def test_client_caches_multiple_values(self, client):
         """Multiple messages update the cache correctly."""
         topics_and_values = [
             ("sensors/temperature/ambient", b"21.0"),
@@ -560,12 +523,12 @@ class TestDemoServerIntegration:
 
         assert len(mqtt_client._cache) >= 5, f"Only cached {len(mqtt_client._cache)} values"
 
-        # Verify types are correct
+        nodes_by_name = {node.name: node for node in node_map.nodes}
         for (_event_name, node_name), value in mqtt_client._cache.items():
-            node = node_map.node_by_name(node_name)
-            if node and "float" in node.datatype:
+            node = nodes_by_name[node_name]
+            if "float" in node.datatype:
                 assert isinstance(value, float), f"{node_name} should be float, got {type(value)}"
-            elif node and ("int" in node.datatype or "uint" in node.datatype):
+            elif "int" in node.datatype:
                 assert isinstance(value, int), f"{node_name} should be int, got {type(value)}"
 
 
@@ -618,14 +581,6 @@ class TestActions:
 class TestErrorHandling:
     """Test error handling and edge cases."""
 
-    @pytest.mark.asyncio
-    async def test_connect_refused(self):
-        """Connection to non-existent broker returns False."""
-        with patch("zelos_sdk.TraceSourceCacheLast"):
-            client = MqttClient(host="127.0.0.1", port=19999)
-            result = await client.connect()
-            assert result is False
-
     def test_parse_non_utf8_payload(self):
         """Non-UTF8 payload returns None."""
         with patch("zelos_sdk.TraceSourceCacheLast"):
@@ -640,3 +595,359 @@ class TestErrorHandling:
             client = MqttClient(node_map=NodeMap())
         assert len(client._topic_lookup) == 0
         assert client._message_count == 0
+
+
+# =============================================================================
+# Trace Logging Tests
+# =============================================================================
+
+
+class TestTraceLogging:
+    """Test flushing cached values to a real trace source."""
+
+    def test_string_node_logs_text_and_flush_continues(self):
+        """A string node logs its text, and the flush still logs the events after it."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "text_test",
+                "events": {
+                    "status": [{"topic": "device/state", "name": "state", "datatype": "string"}],
+                    "power": [{"topic": "sensors/voltage", "name": "voltage"}],
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        for topic, payload in [("device/state", b"running"), ("sensors/voltage", b"12.1")]:
+            message = MagicMock()
+            message.topic = topic
+            message.payload = payload
+            client._handle_message(message)
+
+        client._log_cached_values()
+
+        assert client.source.status.state.get() == "running"
+        assert client.source.power.voltage.get() == pytest.approx(12.1)
+
+
+class TestSharedTopics:
+    """Test that every device map node on a received topic records the message."""
+
+    def test_nodes_on_one_topic_all_record(self):
+        """Two nodes that read different JSON keys of one topic both record."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "shared_topic_test",
+                "events": {
+                    "env": [
+                        {"topic": "sensors/env", "name": "temp", "json_key": "temp"},
+                        {"topic": "sensors/env", "name": "humidity", "json_key": "humidity"},
+                    ]
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        message = MagicMock()
+        message.topic = "sensors/env"
+        message.payload = b'{"temp": 21.5, "humidity": 40}'
+
+        client._handle_message(message)
+        client._log_cached_values()
+
+        assert client.source.env.temp.get() == pytest.approx(21.5)
+        assert client.source.env.humidity.get() == pytest.approx(40)
+        assert client._message_count == 1
+
+
+# =============================================================================
+# Wildcard Topic Tests
+# =============================================================================
+
+
+def _deliver(client: MqttClient, topic: str, payload: bytes) -> None:
+    message = MagicMock()
+    message.topic = topic
+    message.payload = payload
+    client._handle_message(message)
+
+
+class TestWildcardTopics:
+    """Test that topics with + and # wildcards record the messages they match."""
+
+    def test_runtime_wildcard_records_matching_topics(self):
+        """A topic added at runtime with + or # records each matching topic as its own event."""
+        client = MqttClient(node_map=NodeMap.from_dict({"name": "runtime_wildcard_test"}))
+        client.start()
+        client._dynamic_topics.update({"lab/+/temp", "plant/#"})
+
+        _deliver(client, "lab/bench/temp", b'{"celsius": 21.5}')
+        _deliver(client, "plant/line1/speed", b"42")
+        _deliver(client, "lab/bench/humidity", b"40")
+
+        assert client.source.lab_bench_temp.celsius.get() == pytest.approx(21.5)
+        assert client.source.plant_line1_speed.value.get() == 42
+        assert getattr(client.source, "lab_bench_humidity", None) is None
+        assert client._message_count == 2
+
+    def test_configured_wildcard_records_matching_topics(self):
+        """A device map topic with a wildcard records the latest message on any matching topic."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "configured_wildcard_test",
+                "events": {
+                    "status": [{"topic": "devices/+/state", "name": "state", "datatype": "string"}],
+                    "power": [{"topic": "sensors/voltage", "name": "voltage"}],
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+
+        _deliver(client, "devices/pump/state", b"running")
+        _deliver(client, "sensors/voltage", b"12.1")
+        _deliver(client, "devices/pump/state/extra", b"ignored")
+        client._log_cached_values()
+
+        assert client.source.status.state.get() == "running"
+        assert client.source.power.voltage.get() == pytest.approx(12.1)
+        assert client._message_count == 2
+
+    def test_configured_topic_wins_over_runtime_wildcard(self):
+        """A message on a device map topic records into its node, not a runtime wildcard event."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "overlap_test",
+                "events": {"power": [{"topic": "sensors/voltage", "name": "voltage"}]},
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        client._dynamic_topics.add("sensors/#")
+
+        _deliver(client, "sensors/voltage", b"12.1")
+        _deliver(client, "sensors/current", b"0.5")
+        client._log_cached_values()
+
+        assert client.source.power.voltage.get() == pytest.approx(12.1)
+        assert getattr(client.source, "sensors_voltage", None) is None
+        assert client.source.sensors_current.value.get() == pytest.approx(0.5)
+
+    def test_runtime_topic_wins_over_configured_wildcard(self):
+        """An exact runtime topic records as its own event, not into a matching wildcard node."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "runtime_over_wildcard_test",
+                "events": {"any": [{"topic": "sensors/+", "name": "reading"}]},
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        client._dynamic_topics.add("sensors/temp")
+
+        _deliver(client, "sensors/temp", b"21.5")
+        _deliver(client, "sensors/humidity", b"40")
+        client._log_cached_values()
+
+        assert client.source.sensors_temp.value.get() == pytest.approx(21.5)
+        assert client.source.any.reading.get() == pytest.approx(40)
+
+    def test_exact_and_wildcard_nodes_both_record(self):
+        """An exact topic node and a wildcard node that match one message both record it."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "exact_and_wildcard_test",
+                "events": {
+                    "pump": [
+                        {"topic": "devices/pump/state", "name": "pump_state", "datatype": "string"}
+                    ],
+                    "any": [
+                        {"topic": "devices/+/state", "name": "last_state", "datatype": "string"}
+                    ],
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+
+        _deliver(client, "devices/pump/state", b"running")
+        client._log_cached_values()
+
+        assert client.source.pump.pump_state.get() == "running"
+        assert client.source.any.last_state.get() == "running"
+        assert client._message_count == 1
+
+
+class TestLogSource:
+    """Test that the extension's logs share the client's trace source."""
+
+    def test_app_mode_logs_on_the_client_source(self, monkeypatch):
+        import logging
+        from types import SimpleNamespace
+
+        from zelos_sdk.hooks.logging import TraceLoggingHandler
+
+        from zelos_extension_mqtt.cli import app
+
+        clients: list[MqttClient] = []
+        sdk = SimpleNamespace(
+            actions_registry=SimpleNamespace(register=clients.append),
+            init=lambda **_kwargs: None,
+        )
+        monkeypatch.setattr(app, "zelos_sdk", sdk)
+        monkeypatch.setattr(app, "load_config", dict)
+        monkeypatch.setattr(MqttClient, "run", lambda self: None)
+        root = logging.getLogger()
+        before = list(root.handlers)
+        try:
+            app.run_app_mode()
+            added = [h for h in root.handlers if h not in before]
+        finally:
+            for handler in [h for h in root.handlers if h not in before]:
+                root.removeHandler(handler)
+        assert [type(h) for h in added] == [TraceLoggingHandler]
+        assert added[0].trace_source is clients[0].source
+
+    def test_runtime_topic_named_log_is_not_traced(self):
+        from zelos_sdk.hooks.logging import TraceLoggingHandler
+
+        client = MqttClient(node_map=NodeMap.from_dict({"name": "log_topic_test"}))
+        client.start()
+        TraceLoggingHandler(client.source)
+        client._dynamic_topics.add("#")
+
+        _deliver(client, "log", b"1")
+        _deliver(client, "logs", b"2")
+
+        assert client.source.logs.value.get() == 2
+        assert client._message_count == 1
+
+
+def test_saved_config_off_the_schema_exits(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"port": 0}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    with pytest.raises(SystemExit) as exc:
+        app.run_app_mode()
+    assert exc.value.code == 1
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
+        "Invalid configuration: port: 0 is less than the minimum of 1"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ("{", "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"),
+        (
+            json.dumps({"events": {"env": [{"topic": "a/b", "name": "x", "datatype": "float"}]}}),
+            "Invalid datatype: 'float' (valid: bool, float32, float64, int16, int32, int64,"
+            " int8, string, uint16, uint32, uint64, uint8)",
+        ),
+        (
+            json.dumps({"events": {"log": [{"topic": "a/b", "name": "x"}]}}),
+            "Event name 'log' is reserved for the extension's logs",
+        ),
+        (
+            json.dumps({"events": {"env": [{"name": "x"}]}}),
+            "An entry in event 'env' has no 'topic'",
+        ),
+    ],
+)
+def test_saved_device_map_that_does_not_parse_exits(tmp_path, monkeypatch, caplog, text, reason):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    map_file = tmp_path / "map.json"
+    map_file.write_text(text)
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"device_map_file": str(map_file)}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    with pytest.raises(SystemExit) as exc:
+        app.run_app_mode()
+    assert exc.value.code == 1
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
+        f"Invalid device map {map_file}: {reason}"
+    ]
+
+
+class SdkInitialized(Exception):
+    """Raised by the stub of `zelos_sdk.init`, so app mode stops before it connects."""
+
+
+def stub_sdk(monkeypatch) -> list[MqttClient]:
+    """Replace app mode's SDK; return the clients it registers."""
+    from types import SimpleNamespace
+
+    from zelos_extension_mqtt.cli import app
+
+    def init(name, **_kwargs):
+        raise SdkInitialized(name)
+
+    clients: list[MqttClient] = []
+    sdk = SimpleNamespace(actions_registry=SimpleNamespace(register=clients.append), init=init)
+    monkeypatch.setattr(app, "zelos_sdk", sdk)
+    return clients
+
+
+def test_saved_device_map_that_does_not_exist_exits(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    missing = tmp_path / "map.json"
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"device_map_file": str(missing)}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    stub_sdk(monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        app.run_app_mode()
+    assert exc.value.code == 1
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
+        f"Invalid device map {missing}: No such file or directory"
+    ]
+
+
+def test_demo_mode_with_a_missing_device_map_uses_the_demo_map(tmp_path, monkeypatch, caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from zelos_extension_mqtt.cli import app
+
+    missing = tmp_path / "map.json"
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"device_map_file": str(missing)}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    demo_server = SimpleNamespace(start=lambda: None, stop=lambda: None)
+    monkeypatch.setattr(app, "DemoServer", lambda **_kwargs: demo_server)
+    clients = stub_sdk(monkeypatch)
+    with pytest.raises(SdkInitialized):
+        app.run_app_mode(demo=True)
+    assert [c.node_map for c in clients] == [NodeMap.from_file(DEMO_DEVICE_PATH)]
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.parametrize("saved_config", [{}, {"device_map_file": ""}])
+def test_no_device_map_starts_with_runtime_topics_only(tmp_path, monkeypatch, caplog, saved_config):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps(saved_config))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    clients = stub_sdk(monkeypatch)
+    with pytest.raises(SdkInitialized):
+        app.run_app_mode()
+    assert [c.node_map.nodes for c in clients] == [[]]
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []

@@ -31,6 +31,7 @@ SDK_DATATYPE_MAP = {
     "uint64": zelos_sdk.DataType.UInt64,
     "int64": zelos_sdk.DataType.Int64,
     "float64": zelos_sdk.DataType.Float64,
+    "string": zelos_sdk.DataType.String,
 }
 
 
@@ -63,12 +64,11 @@ class MqttClient:
         self._running = False
         self._mqtt_client: aiomqtt.Client | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._source: zelos_sdk.TraceSourceCacheLast | None = None
+        self.source: zelos_sdk.TraceSourceCacheLast | None = None
 
-        # Value cache: (event_name, node_name) -> value
         self._cache: dict[tuple[str, str], Any] = {}
-        # Lookup: topic -> (event_name, node)
-        self._topic_lookup: dict[str, tuple[str, Node]] = {}
+        self._topic_lookup: dict[str, list[tuple[str, Node]]] = {}
+        self._wildcard_lookup: list[tuple[str, tuple[str, Node]]] = []
         # Topics subscribed at runtime (not in node map); traced via log_dict
         self._dynamic_topics: set[str] = set()
 
@@ -79,19 +79,33 @@ class MqttClient:
         self._build_topic_lookup()
 
     def _build_topic_lookup(self) -> None:
-        """Build topic -> (event_name, node) lookup from node map."""
+        """Build the exact-topic and wildcard-topic lookups of (event_name, node) from node map."""
         self._topic_lookup = {}
+        self._wildcard_lookup = []
         for event_name, nodes in self.node_map.events.items():
             for node in nodes:
-                self._topic_lookup[node.topic] = (event_name, node)
+                if "+" in node.topic or "#" in node.topic:
+                    self._wildcard_lookup.append((node.topic, (event_name, node)))
+                else:
+                    self._topic_lookup.setdefault(node.topic, []).append((event_name, node))
+
+    def _find_nodes(self, topic: str) -> list[tuple[str, Node]]:
+        """Find every node a received topic records into, by exact or wildcard topic."""
+        matches = list(self._topic_lookup.get(topic, []))
+        if self._wildcard_lookup:
+            received = aiomqtt.Topic(topic)
+            matches += [
+                entry for wildcard, entry in self._wildcard_lookup if received.matches(wildcard)
+            ]
+        return matches
 
     def _init_trace_source(self) -> None:
         """Create Zelos trace source from node map."""
         source_name = self.node_map.name if self.node_map.name else "mqtt"
-        self._source = zelos_sdk.TraceSourceCacheLast(source_name)
+        self.source = zelos_sdk.TraceSourceCacheLast(source_name)
 
         if not self.node_map.events:
-            self._source.add_event(
+            self.source.add_event(
                 "raw",
                 [
                     zelos_sdk.TraceEventFieldMetadata("topic", zelos_sdk.DataType.String),
@@ -105,9 +119,9 @@ class MqttClient:
                 continue
             fields = []
             for node in nodes:
-                dtype = SDK_DATATYPE_MAP.get(node.datatype, zelos_sdk.DataType.Float32)
+                dtype = SDK_DATATYPE_MAP[node.datatype]
                 fields.append(zelos_sdk.TraceEventFieldMetadata(node.name, dtype, node.unit))
-            self._source.add_event(event_name, fields)
+            self.source.add_event(event_name, fields)
 
     def _parse_payload(self, payload: bytes, node: Node) -> Any:
         """Parse MQTT message payload into the correct Python type."""
@@ -162,19 +176,25 @@ class MqttClient:
         """Process an incoming MQTT message and cache its value."""
         topic = str(message.topic)
 
-        # Dynamic topics: log directly via log_dict with schema inference
+        # An exact runtime topic records as its own event, even where a wildcard node matches it
         if topic in self._dynamic_topics:
             self._handle_dynamic_message(topic, message.payload)
             return
 
-        lookup = self._topic_lookup.get(topic)
-        if not lookup:
+        matches = self._find_nodes(topic)
+        if not matches:
+            received = aiomqtt.Topic(topic)
+            if any(received.matches(wildcard) for wildcard in self._dynamic_topics):
+                self._handle_dynamic_message(topic, message.payload)
             return
 
-        event_name, node = lookup
-        value = self._parse_payload(message.payload, node)
-        if value is not None:
-            self._cache[(event_name, node.name)] = value
+        recorded = False
+        for event_name, node in matches:
+            value = self._parse_payload(message.payload, node)
+            if value is not None:
+                self._cache[(event_name, node.name)] = value
+                recorded = True
+        if recorded:
             self._message_count += 1
 
     def _handle_dynamic_message(self, topic: str, payload: bytes) -> None:
@@ -190,6 +210,9 @@ class MqttClient:
 
         # Use topic path as event name (slashes replaced for compatibility)
         event_name = topic.replace("/", "_")
+        if event_name == "log":
+            logger.debug("Topic 'log' is not traced: the extension's logs use that event name")
+            return
 
         try:
             data = json.loads(text)
@@ -198,17 +221,17 @@ class MqttClient:
         except (json.JSONDecodeError, ValueError):
             data = {"value": text}
 
-        if self._source:
-            self._source.log_dict(event_name, data)
+        if self.source:
+            self.source.log_dict(event_name, data)
         self._message_count += 1
 
     def _log_cached_values(self) -> None:
         """Flush cached values to the Zelos trace source."""
-        if not self._source or not self._cache:
+        if not self.source or not self._cache:
             return
 
         for event_name, nodes in self.node_map.events.items():
-            event = getattr(self._source, event_name, None)
+            event = getattr(self.source, event_name, None)
             if not event:
                 continue
             values = {}
@@ -223,27 +246,6 @@ class MqttClient:
         if self._poll_count % 10 == 0:
             logger.debug(f"Poll #{self._poll_count}, messages received: {self._message_count}")
 
-    async def connect(self) -> bool:
-        """Test connectivity to the MQTT broker.
-
-        Returns True if a connection can be established.
-        """
-        try:
-            async with aiomqtt.Client(
-                self.host,
-                self.port,
-                username=self.username,
-                password=self.password,
-            ):
-                return True
-        except (aiomqtt.MqttError, OSError) as e:
-            logger.error(f"Connection test failed: {e}")
-            return False
-
-    async def disconnect(self) -> None:
-        """Signal the client to stop. Actual cleanup happens in _run_async."""
-        self._running = False
-
     async def _subscribe_all(self, client: aiomqtt.Client) -> None:
         """Subscribe to all topics in the node map."""
         for node in self.node_map.nodes:
@@ -256,7 +258,6 @@ class MqttClient:
         self._loop = asyncio.get_running_loop()
         reconnect_interval = 3.0
 
-        # Start periodic logging task
         log_task = asyncio.create_task(self._periodic_log())
 
         try:
@@ -367,8 +368,9 @@ class MqttClient:
         """Subscribe to an additional MQTT topic at runtime.
 
         If the topic is already in the node map, messages are handled normally.
-        Otherwise, messages are traced via log_dict with schema inferred from
-        the payload.
+        Otherwise, messages are traced via log_dict, one event per received topic,
+        with schema inferred from the payload; a wildcard topic leaves the messages
+        a node map entry matches to that entry.
         """
         if not self._connected or not self._mqtt_client or not self._loop:
             return {"error": "Not connected to broker", "success": False}
@@ -380,7 +382,6 @@ class MqttClient:
             )
             future.result(timeout=5.0)
 
-            # Track as dynamic if not already in the node map
             if topic not in self._topic_lookup:
                 self._dynamic_topics.add(topic)
 
