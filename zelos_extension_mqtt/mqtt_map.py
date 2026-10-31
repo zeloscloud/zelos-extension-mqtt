@@ -36,7 +36,8 @@ class Node:
 
     def __post_init__(self):
         if self.datatype not in VALID_DATATYPES:
-            raise ValueError(f"Invalid datatype: {self.datatype!r} (valid: {VALID_DATATYPES})")
+            valid = ", ".join(sorted(VALID_DATATYPES))
+            raise ValueError(f"Invalid datatype: {self.datatype!r} (valid: {valid})")
         if self.qos not in (0, 1, 2):
             raise ValueError(f"Invalid QoS: {self.qos} (must be 0, 1, or 2)")
         if self.payload_type not in ("auto", "json", "raw"):
@@ -69,6 +70,9 @@ class NodeMap:
                 raise ValueError("Event name 'log' is reserved for the extension's logs")
             nodes = []
             for item in node_list:
+                for key in ("topic", "name"):
+                    if key not in item:
+                        raise ValueError(f"An entry in event {event_name!r} has no {key!r}")
                 nodes.append(
                     Node(
                         topic=item["topic"],

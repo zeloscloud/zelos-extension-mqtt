@@ -54,7 +54,11 @@ def run_app_mode(
     node_map = None
     device_map_file = config.get("device_map_file")
     if device_map_file and Path(device_map_file).exists():
-        node_map = NodeMap.from_file(device_map_file)
+        try:
+            node_map = NodeMap.from_file(device_map_file)
+        except (OSError, ValueError) as e:
+            logger.error("Invalid device map %s: %s", device_map_file, e)
+            sys.exit(1)
         logger.info(f"Loaded device map: {device_map_file} ({len(node_map.nodes)} nodes)")
 
     demo_server = None
