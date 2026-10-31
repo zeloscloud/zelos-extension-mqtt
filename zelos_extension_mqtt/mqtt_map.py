@@ -65,6 +65,8 @@ class NodeMap:
         """Build a node map from a dictionary."""
         events: dict[str, list[Node]] = {}
         for event_name, node_list in data.get("events", {}).items():
+            if event_name == "log":
+                raise ValueError("Event name 'log' is reserved for the extension's logs")
             nodes = []
             for item in node_list:
                 nodes.append(

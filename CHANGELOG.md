@@ -14,6 +14,7 @@
 - A topic mapped with `"datatype": "string"` records its text, and no longer stops recording the other events.
 - Every device map entry on a topic records its message, so two entries can read different JSON keys of one topic.
 - A topic with a `+` or `#` wildcard records the messages it matches, whether added with Subscribe to Topic or listed in the device map. A topic added with Subscribe to Topic by its exact name still records as its own event.
+- Logs record as a `log` event next to the topic data, on the device map's source (`mqtt` without a map), instead of on a separate `zelos_extension_mqtt_logger` source. A device map event can no longer be named `log`, and a topic named `log` that Subscribe to Topic picks up is not traced.
 
 ## 0.1.1
 
