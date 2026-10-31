@@ -78,14 +78,13 @@ def run_app_mode(
 
     zelos_sdk.init(name="zelos_extension_mqtt", actions=True)
 
-    handler = TraceLoggingHandler("zelos_extension_mqtt_logger")
-    handler.setLevel(logging.INFO)
-    logging.getLogger().addHandler(handler)
-
     if set_client:
         set_client(client)
 
     client.start()
+    handler = TraceLoggingHandler(client.source)
+    handler.setLevel(logging.INFO)
+    logging.getLogger().addHandler(handler)
 
     try:
         if trace_file:

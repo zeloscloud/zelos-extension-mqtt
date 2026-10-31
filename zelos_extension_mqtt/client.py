@@ -64,7 +64,7 @@ class MqttClient:
         self._running = False
         self._mqtt_client: aiomqtt.Client | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._source: zelos_sdk.TraceSourceCacheLast | None = None
+        self.source: zelos_sdk.TraceSourceCacheLast | None = None
 
         self._cache: dict[tuple[str, str], Any] = {}
         self._topic_lookup: dict[str, list[tuple[str, Node]]] = {}
@@ -102,10 +102,10 @@ class MqttClient:
     def _init_trace_source(self) -> None:
         """Create Zelos trace source from node map."""
         source_name = self.node_map.name if self.node_map.name else "mqtt"
-        self._source = zelos_sdk.TraceSourceCacheLast(source_name)
+        self.source = zelos_sdk.TraceSourceCacheLast(source_name)
 
         if not self.node_map.events:
-            self._source.add_event(
+            self.source.add_event(
                 "raw",
                 [
                     zelos_sdk.TraceEventFieldMetadata("topic", zelos_sdk.DataType.String),
@@ -121,7 +121,7 @@ class MqttClient:
             for node in nodes:
                 dtype = SDK_DATATYPE_MAP[node.datatype]
                 fields.append(zelos_sdk.TraceEventFieldMetadata(node.name, dtype, node.unit))
-            self._source.add_event(event_name, fields)
+            self.source.add_event(event_name, fields)
 
     def _parse_payload(self, payload: bytes, node: Node) -> Any:
         """Parse MQTT message payload into the correct Python type."""
@@ -210,6 +210,9 @@ class MqttClient:
 
         # Use topic path as event name (slashes replaced for compatibility)
         event_name = topic.replace("/", "_")
+        if event_name == "log":
+            logger.debug("Topic 'log' is not traced: the extension's logs use that event name")
+            return
 
         try:
             data = json.loads(text)
@@ -218,17 +221,17 @@ class MqttClient:
         except (json.JSONDecodeError, ValueError):
             data = {"value": text}
 
-        if self._source:
-            self._source.log_dict(event_name, data)
+        if self.source:
+            self.source.log_dict(event_name, data)
         self._message_count += 1
 
     def _log_cached_values(self) -> None:
         """Flush cached values to the Zelos trace source."""
-        if not self._source or not self._cache:
+        if not self.source or not self._cache:
             return
 
         for event_name, nodes in self.node_map.events.items():
-            event = getattr(self._source, event_name, None)
+            event = getattr(self.source, event_name, None)
             if not event:
                 continue
             values = {}

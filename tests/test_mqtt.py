@@ -99,6 +99,10 @@ class TestNodeMap:
         assert len(nmap.events["temperature"]) == 1
         assert len(nmap.events["power"]) == 2
 
+    def test_log_event_name_is_reserved(self):
+        with pytest.raises(ValueError, match="'log' is reserved"):
+            NodeMap.from_dict({"events": {"log": [{"topic": "a/b", "name": "x"}]}})
+
     def test_from_file(self):
         """Node map loads correctly from demo device JSON."""
         nmap = NodeMap.from_file(DEMO_DEVICE_PATH)
@@ -611,8 +615,8 @@ class TestTraceLogging:
 
         client._log_cached_values()
 
-        assert client._source.status.state.get() == "running"
-        assert client._source.power.voltage.get() == pytest.approx(12.1)
+        assert client.source.status.state.get() == "running"
+        assert client.source.power.voltage.get() == pytest.approx(12.1)
 
 
 class TestSharedTopics:
@@ -640,8 +644,8 @@ class TestSharedTopics:
         client._handle_message(message)
         client._log_cached_values()
 
-        assert client._source.env.temp.get() == pytest.approx(21.5)
-        assert client._source.env.humidity.get() == pytest.approx(40)
+        assert client.source.env.temp.get() == pytest.approx(21.5)
+        assert client.source.env.humidity.get() == pytest.approx(40)
         assert client._message_count == 1
 
 
@@ -670,9 +674,9 @@ class TestWildcardTopics:
         _deliver(client, "plant/line1/speed", b"42")
         _deliver(client, "lab/bench/humidity", b"40")
 
-        assert client._source.lab_bench_temp.celsius.get() == pytest.approx(21.5)
-        assert client._source.plant_line1_speed.value.get() == 42
-        assert getattr(client._source, "lab_bench_humidity", None) is None
+        assert client.source.lab_bench_temp.celsius.get() == pytest.approx(21.5)
+        assert client.source.plant_line1_speed.value.get() == 42
+        assert getattr(client.source, "lab_bench_humidity", None) is None
         assert client._message_count == 2
 
     def test_configured_wildcard_records_matching_topics(self):
@@ -694,8 +698,8 @@ class TestWildcardTopics:
         _deliver(client, "devices/pump/state/extra", b"ignored")
         client._log_cached_values()
 
-        assert client._source.status.state.get() == "running"
-        assert client._source.power.voltage.get() == pytest.approx(12.1)
+        assert client.source.status.state.get() == "running"
+        assert client.source.power.voltage.get() == pytest.approx(12.1)
         assert client._message_count == 2
 
     def test_configured_topic_wins_over_runtime_wildcard(self):
@@ -714,9 +718,9 @@ class TestWildcardTopics:
         _deliver(client, "sensors/current", b"0.5")
         client._log_cached_values()
 
-        assert client._source.power.voltage.get() == pytest.approx(12.1)
-        assert getattr(client._source, "sensors_voltage", None) is None
-        assert client._source.sensors_current.value.get() == pytest.approx(0.5)
+        assert client.source.power.voltage.get() == pytest.approx(12.1)
+        assert getattr(client.source, "sensors_voltage", None) is None
+        assert client.source.sensors_current.value.get() == pytest.approx(0.5)
 
     def test_runtime_topic_wins_over_configured_wildcard(self):
         """An exact runtime topic records as its own event, not into a matching wildcard node."""
@@ -734,8 +738,8 @@ class TestWildcardTopics:
         _deliver(client, "sensors/humidity", b"40")
         client._log_cached_values()
 
-        assert client._source.sensors_temp.value.get() == pytest.approx(21.5)
-        assert client._source.any.reading.get() == pytest.approx(40)
+        assert client.source.sensors_temp.value.get() == pytest.approx(21.5)
+        assert client.source.any.reading.get() == pytest.approx(40)
 
     def test_exact_and_wildcard_nodes_both_record(self):
         """An exact topic node and a wildcard node that match one message both record it."""
@@ -758,6 +762,51 @@ class TestWildcardTopics:
         _deliver(client, "devices/pump/state", b"running")
         client._log_cached_values()
 
-        assert client._source.pump.pump_state.get() == "running"
-        assert client._source.any.last_state.get() == "running"
+        assert client.source.pump.pump_state.get() == "running"
+        assert client.source.any.last_state.get() == "running"
+        assert client._message_count == 1
+
+
+class TestLogSource:
+    """Test that the extension's logs share the client's trace source."""
+
+    def test_app_mode_logs_on_the_client_source(self, monkeypatch):
+        import logging
+        from types import SimpleNamespace
+
+        from zelos_sdk.hooks.logging import TraceLoggingHandler
+
+        from zelos_extension_mqtt.cli import app
+
+        clients: list[MqttClient] = []
+        sdk = SimpleNamespace(
+            actions_registry=SimpleNamespace(register=clients.append),
+            init=lambda **_kwargs: None,
+        )
+        monkeypatch.setattr(app, "zelos_sdk", sdk)
+        monkeypatch.setattr(app, "load_config", dict)
+        monkeypatch.setattr(MqttClient, "run", lambda self: None)
+        root = logging.getLogger()
+        before = list(root.handlers)
+        try:
+            app.run_app_mode()
+            added = [h for h in root.handlers if h not in before]
+        finally:
+            for handler in [h for h in root.handlers if h not in before]:
+                root.removeHandler(handler)
+        assert [type(h) for h in added] == [TraceLoggingHandler]
+        assert added[0].trace_source is clients[0].source
+
+    def test_runtime_topic_named_log_is_not_traced(self):
+        from zelos_sdk.hooks.logging import TraceLoggingHandler
+
+        client = MqttClient(node_map=NodeMap.from_dict({"name": "log_topic_test"}))
+        client.start()
+        TraceLoggingHandler(client.source)
+        client._dynamic_topics.add("#")
+
+        _deliver(client, "log", b"1")
+        _deliver(client, "logs", b"2")
+
+        assert client.source.logs.value.get() == 2
         assert client._message_count == 1
