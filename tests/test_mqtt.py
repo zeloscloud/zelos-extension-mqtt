@@ -643,3 +643,121 @@ class TestSharedTopics:
         assert client._source.env.temp.get() == pytest.approx(21.5)
         assert client._source.env.humidity.get() == pytest.approx(40)
         assert client._message_count == 1
+
+
+# =============================================================================
+# Wildcard Topic Tests
+# =============================================================================
+
+
+def _deliver(client: MqttClient, topic: str, payload: bytes) -> None:
+    message = MagicMock()
+    message.topic = topic
+    message.payload = payload
+    client._handle_message(message)
+
+
+class TestWildcardTopics:
+    """Test that topics with + and # wildcards record the messages they match."""
+
+    def test_runtime_wildcard_records_matching_topics(self):
+        """A topic added at runtime with + or # records each matching topic as its own event."""
+        client = MqttClient(node_map=NodeMap.from_dict({"name": "runtime_wildcard_test"}))
+        client.start()
+        client._dynamic_topics.update({"lab/+/temp", "plant/#"})
+
+        _deliver(client, "lab/bench/temp", b'{"celsius": 21.5}')
+        _deliver(client, "plant/line1/speed", b"42")
+        _deliver(client, "lab/bench/humidity", b"40")
+
+        assert client._source.lab_bench_temp.celsius.get() == pytest.approx(21.5)
+        assert client._source.plant_line1_speed.value.get() == 42
+        assert getattr(client._source, "lab_bench_humidity", None) is None
+        assert client._message_count == 2
+
+    def test_configured_wildcard_records_matching_topics(self):
+        """A device map topic with a wildcard records the latest message on any matching topic."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "configured_wildcard_test",
+                "events": {
+                    "status": [{"topic": "devices/+/state", "name": "state", "datatype": "string"}],
+                    "power": [{"topic": "sensors/voltage", "name": "voltage"}],
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+
+        _deliver(client, "devices/pump/state", b"running")
+        _deliver(client, "sensors/voltage", b"12.1")
+        _deliver(client, "devices/pump/state/extra", b"ignored")
+        client._log_cached_values()
+
+        assert client._source.status.state.get() == "running"
+        assert client._source.power.voltage.get() == pytest.approx(12.1)
+        assert client._message_count == 2
+
+    def test_configured_topic_wins_over_runtime_wildcard(self):
+        """A message on a device map topic records into its node, not a runtime wildcard event."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "overlap_test",
+                "events": {"power": [{"topic": "sensors/voltage", "name": "voltage"}]},
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        client._dynamic_topics.add("sensors/#")
+
+        _deliver(client, "sensors/voltage", b"12.1")
+        _deliver(client, "sensors/current", b"0.5")
+        client._log_cached_values()
+
+        assert client._source.power.voltage.get() == pytest.approx(12.1)
+        assert getattr(client._source, "sensors_voltage", None) is None
+        assert client._source.sensors_current.value.get() == pytest.approx(0.5)
+
+    def test_runtime_topic_wins_over_configured_wildcard(self):
+        """An exact runtime topic records as its own event, not into a matching wildcard node."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "runtime_over_wildcard_test",
+                "events": {"any": [{"topic": "sensors/+", "name": "reading"}]},
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        client._dynamic_topics.add("sensors/temp")
+
+        _deliver(client, "sensors/temp", b"21.5")
+        _deliver(client, "sensors/humidity", b"40")
+        client._log_cached_values()
+
+        assert client._source.sensors_temp.value.get() == pytest.approx(21.5)
+        assert client._source.any.reading.get() == pytest.approx(40)
+
+    def test_exact_and_wildcard_nodes_both_record(self):
+        """An exact topic node and a wildcard node that match one message both record it."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "exact_and_wildcard_test",
+                "events": {
+                    "pump": [
+                        {"topic": "devices/pump/state", "name": "pump_state", "datatype": "string"}
+                    ],
+                    "any": [
+                        {"topic": "devices/+/state", "name": "last_state", "datatype": "string"}
+                    ],
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+
+        _deliver(client, "devices/pump/state", b"running")
+        client._log_cached_values()
+
+        assert client._source.pump.pump_state.get() == "running"
+        assert client._source.any.last_state.get() == "running"
+        assert client._message_count == 1
