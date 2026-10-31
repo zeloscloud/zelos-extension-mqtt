@@ -96,6 +96,9 @@ class DemoServer:
 
     def start(self) -> None:
         """Start broker and publisher in a background thread."""
+        # amqtt logs every connection, and its state machine every transition, at INFO
+        for name in ("amqtt", "transitions"):
+            logging.getLogger(name).setLevel(logging.WARNING)
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
         if not self._ready.wait(timeout=10.0):
