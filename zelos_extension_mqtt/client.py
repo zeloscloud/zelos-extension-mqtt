@@ -67,7 +67,7 @@ class MqttClient:
         self._source: zelos_sdk.TraceSourceCacheLast | None = None
 
         self._cache: dict[tuple[str, str], Any] = {}
-        self._topic_lookup: dict[str, tuple[str, Node]] = {}
+        self._topic_lookup: dict[str, list[tuple[str, Node]]] = {}
         # Topics subscribed at runtime (not in node map); traced via log_dict
         self._dynamic_topics: set[str] = set()
 
@@ -78,11 +78,11 @@ class MqttClient:
         self._build_topic_lookup()
 
     def _build_topic_lookup(self) -> None:
-        """Build topic -> (event_name, node) lookup from node map."""
+        """Build topic -> [(event_name, node)] lookup from node map."""
         self._topic_lookup = {}
         for event_name, nodes in self.node_map.events.items():
             for node in nodes:
-                self._topic_lookup[node.topic] = (event_name, node)
+                self._topic_lookup.setdefault(node.topic, []).append((event_name, node))
 
     def _init_trace_source(self) -> None:
         """Create Zelos trace source from node map."""
@@ -165,14 +165,17 @@ class MqttClient:
             self._handle_dynamic_message(topic, message.payload)
             return
 
-        lookup = self._topic_lookup.get(topic)
-        if not lookup:
+        matches = self._topic_lookup.get(topic)
+        if not matches:
             return
 
-        event_name, node = lookup
-        value = self._parse_payload(message.payload, node)
-        if value is not None:
-            self._cache[(event_name, node.name)] = value
+        recorded = False
+        for event_name, node in matches:
+            value = self._parse_payload(message.payload, node)
+            if value is not None:
+                self._cache[(event_name, node.name)] = value
+                recorded = True
+        if recorded:
             self._message_count += 1
 
     def _handle_dynamic_message(self, topic: str, payload: bytes) -> None:

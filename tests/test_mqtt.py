@@ -613,3 +613,33 @@ class TestTraceLogging:
 
         assert client._source.status.state.get() == "running"
         assert client._source.power.voltage.get() == pytest.approx(12.1)
+
+
+class TestSharedTopics:
+    """Test that every device map node on a received topic records the message."""
+
+    def test_nodes_on_one_topic_all_record(self):
+        """Two nodes that read different JSON keys of one topic both record."""
+        node_map = NodeMap.from_dict(
+            {
+                "name": "shared_topic_test",
+                "events": {
+                    "env": [
+                        {"topic": "sensors/env", "name": "temp", "json_key": "temp"},
+                        {"topic": "sensors/env", "name": "humidity", "json_key": "humidity"},
+                    ]
+                },
+            }
+        )
+        client = MqttClient(node_map=node_map)
+        client.start()
+        message = MagicMock()
+        message.topic = "sensors/env"
+        message.payload = b'{"temp": 21.5, "humidity": 40}'
+
+        client._handle_message(message)
+        client._log_cached_values()
+
+        assert client._source.env.temp.get() == pytest.approx(21.5)
+        assert client._source.env.humidity.get() == pytest.approx(40)
+        assert client._message_count == 1
