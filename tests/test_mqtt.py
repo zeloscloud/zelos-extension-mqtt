@@ -876,3 +876,78 @@ def test_saved_device_map_that_does_not_parse_exits(tmp_path, monkeypatch, caplo
     assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
         f"Invalid device map {map_file}: {reason}"
     ]
+
+
+class SdkInitialized(Exception):
+    """Raised by the stub of `zelos_sdk.init`, so app mode stops before it connects."""
+
+
+def stub_sdk(monkeypatch) -> list[MqttClient]:
+    """Replace app mode's SDK; return the clients it registers."""
+    from types import SimpleNamespace
+
+    from zelos_extension_mqtt.cli import app
+
+    def init(name, **_kwargs):
+        raise SdkInitialized(name)
+
+    clients: list[MqttClient] = []
+    sdk = SimpleNamespace(actions_registry=SimpleNamespace(register=clients.append), init=init)
+    monkeypatch.setattr(app, "zelos_sdk", sdk)
+    return clients
+
+
+def test_saved_device_map_that_does_not_exist_exits(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    missing = tmp_path / "map.json"
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"device_map_file": str(missing)}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    stub_sdk(monkeypatch)
+    with pytest.raises(SystemExit) as exc:
+        app.run_app_mode()
+    assert exc.value.code == 1
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
+        f"Invalid device map {missing}: No such file or directory"
+    ]
+
+
+def test_demo_mode_with_a_missing_device_map_uses_the_demo_map(tmp_path, monkeypatch, caplog):
+    import logging
+    from types import SimpleNamespace
+
+    from zelos_extension_mqtt.cli import app
+
+    missing = tmp_path / "map.json"
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"device_map_file": str(missing)}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    demo_server = SimpleNamespace(start=lambda: None, stop=lambda: None)
+    monkeypatch.setattr(app, "DemoServer", lambda **_kwargs: demo_server)
+    clients = stub_sdk(monkeypatch)
+    with pytest.raises(SdkInitialized):
+        app.run_app_mode(demo=True)
+    assert [c.node_map for c in clients] == [NodeMap.from_file(DEMO_DEVICE_PATH)]
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+@pytest.mark.parametrize("saved_config", [{}, {"device_map_file": ""}])
+def test_no_device_map_starts_with_runtime_topics_only(tmp_path, monkeypatch, caplog, saved_config):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps(saved_config))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    clients = stub_sdk(monkeypatch)
+    with pytest.raises(SdkInitialized):
+        app.run_app_mode()
+    assert [c.node_map.nodes for c in clients] == [[]]
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []

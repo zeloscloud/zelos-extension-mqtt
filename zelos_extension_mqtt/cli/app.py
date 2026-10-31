@@ -51,18 +51,21 @@ def run_app_mode(
     username = config.get("username") or None
     password = config.get("password") or None
 
+    demo = demo or config.get("demo", False)
     node_map = None
     device_map_file = config.get("device_map_file")
-    if device_map_file and Path(device_map_file).exists():
+    # In demo mode a missing map file falls back to the demo map
+    if device_map_file and (Path(device_map_file).exists() or not demo):
         try:
             node_map = NodeMap.from_file(device_map_file)
         except (OSError, ValueError) as e:
-            logger.error("Invalid device map %s: %s", device_map_file, e)
+            reason = e.strerror if isinstance(e, OSError) else e
+            logger.error("Invalid device map %s: %s", device_map_file, reason)
             sys.exit(1)
         logger.info(f"Loaded device map: {device_map_file} ({len(node_map.nodes)} nodes)")
 
     demo_server = None
-    if demo or config.get("demo", False):
+    if demo:
         demo_server = DemoServer(host="127.0.0.1", port=port, publish_interval=poll_interval)
         demo_server.start()
         host = "127.0.0.1"

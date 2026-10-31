@@ -18,6 +18,7 @@
 - The demo broker no longer writes its connection and internal state lines to the log.
 - Saved settings that fail the settings check stop the extension with one `Invalid configuration: ...` error line and exit status 1, instead of a Python traceback.
 - A device map file that does not parse (invalid JSON, an unknown datatype, an entry without a topic or name, an event named `log`) stops the extension with one `Invalid device map <file>: ...` error line and exit status 1, instead of a Python traceback.
+- Outside demo mode, a device map file that does not exist stops the extension with one `Invalid device map <file>: No such file or directory` error line and exit status 1, instead of being skipped. Demo mode still falls back to the demo map.
 
 ## 0.1.1
 
