@@ -838,3 +838,41 @@ def test_saved_config_off_the_schema_exits(tmp_path, monkeypatch, caplog):
     assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
         "Invalid configuration: port: 0 is less than the minimum of 1"
     ]
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        ("{", "Expecting property name enclosed in double quotes: line 1 column 2 (char 1)"),
+        (
+            json.dumps({"events": {"env": [{"topic": "a/b", "name": "x", "datatype": "float"}]}}),
+            "Invalid datatype: 'float' (valid: bool, float32, float64, int16, int32, int64,"
+            " int8, string, uint16, uint32, uint64, uint8)",
+        ),
+        (
+            json.dumps({"events": {"log": [{"topic": "a/b", "name": "x"}]}}),
+            "Event name 'log' is reserved for the extension's logs",
+        ),
+        (
+            json.dumps({"events": {"env": [{"name": "x"}]}}),
+            "An entry in event 'env' has no 'topic'",
+        ),
+    ],
+)
+def test_saved_device_map_that_does_not_parse_exits(tmp_path, monkeypatch, caplog, text, reason):
+    import logging
+
+    from zelos_extension_mqtt.cli import app
+
+    map_file = tmp_path / "map.json"
+    map_file.write_text(text)
+    saved = tmp_path / "config.json"
+    saved.write_text(json.dumps({"device_map_file": str(map_file)}))
+    monkeypatch.setenv("ZELOS_CONFIG_PATH", str(saved))
+    monkeypatch.chdir(Path(__file__).parents[1])
+    with pytest.raises(SystemExit) as exc:
+        app.run_app_mode()
+    assert exc.value.code == 1
+    assert [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR] == [
+        f"Invalid device map {map_file}: {reason}"
+    ]
