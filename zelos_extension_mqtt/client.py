@@ -527,8 +527,9 @@ class BrokerClient:
         while True:
             up = False
             self._paho_errors.last = ""
+            client = aiomqtt.Client(**self.client_kwargs())
             try:
-                async with aiomqtt.Client(**self.client_kwargs()) as client:
+                async with client:
                     up = True
                     await self._serve(client)
             except aiomqtt.MqttError as e:
@@ -536,6 +537,7 @@ class BrokerClient:
             finally:
                 if up:
                     self._down()
+                _retrieve(client._disconnected)  # noqa: SLF001
             self.contacted.set()
             if up:
                 backoff = RECONNECT_INITIAL
@@ -722,6 +724,14 @@ class _DaemonExecutor(concurrent.futures.ThreadPoolExecutor):
 
     def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
         """Nothing to join: a connect still running dies with the process."""
+
+
+def _retrieve(future: asyncio.Future[Any]) -> None:
+    """Read a done future's exception so asyncio never logs it as unretrieved. A stop that
+    races the broker dropping us leaves aiomqtt's `_disconnected` set and unread; asyncio
+    reports that as an ERROR ("Future exception was never retrieved") when it is collected."""
+    if future.done() and not future.cancelled():
+        future.exception()
 
 
 def _describe(filters: dict[str, int]) -> str:
