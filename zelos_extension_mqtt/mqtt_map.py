@@ -50,6 +50,20 @@ def is_wildcard(topic: str) -> bool:
     return "+" in topic or "#" in topic
 
 
+def _dollar_apart(al: list[str], bl: list[str]) -> bool:
+    """A first-level wildcard never reaches a `$` topic (spec 4.7.2: `#` skips `$SYS/...`)."""
+    return (al[0] in ("+", "#") and bl[0].startswith("$")) or (
+        bl[0] in ("+", "#") and al[0].startswith("$")
+    )
+
+
+def matches(topic_filter: str, topic: str) -> bool:
+    """Whether a received `topic` matches `topic_filter`, `$` topics included (4.7.2)."""
+    return aiomqtt.Topic(topic).matches(topic_filter) and not _dollar_apart(
+        topic_filter.split("/"), topic.split("/")
+    )
+
+
 def covers(a: str, b: str) -> bool:
     """Whether filter `a` matches every topic filter `b` matches.
 
@@ -57,6 +71,8 @@ def covers(a: str, b: str) -> bool:
     cover; it then counts as the wider of the two.
     """
     al, bl = a.split("/"), b.split("/")
+    if _dollar_apart(al, bl):
+        return False
     for i, x in enumerate(al):
         if x == "#":
             return True
@@ -68,6 +84,8 @@ def covers(a: str, b: str) -> bool:
 def intersection(a: str, b: str) -> str | None:
     """The filter matching exactly the topics both `a` and `b` match; None if they share none."""
     al, bl = a.split("/"), b.split("/")
+    if _dollar_apart(al, bl):
+        return None
     out: list[str] = []
     for i in range(max(len(al), len(bl))):
         x = al[i] if i < len(al) else None
@@ -239,9 +257,8 @@ class NodeMap:
         if exact:
             return exact
         best = None
-        received = aiomqtt.Topic(topic)
         for wildcard in self._wild:
-            if received.matches(wildcard) and (best is None or covers(best, wildcard)):
+            if matches(wildcard, topic) and (best is None or covers(best, wildcard)):
                 best = wildcard
         return self._wild[best] if best else []
 

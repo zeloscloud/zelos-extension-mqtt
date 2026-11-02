@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import zelos_sdk
 
+from zelos_extension_mqtt.client import ACTION_TIMEOUT
 from zelos_extension_mqtt.mqtt_map import filter_error
 
 if TYPE_CHECKING:
@@ -69,10 +70,11 @@ def _broker_field(func: Any) -> Any:
     )(func)
 
 
-def _run(coro: Any, what: str) -> Any:
-    """Dispatch onto the broker loop; anything not self-describing becomes a RuntimeError."""
+def _run(coro: Any, what: str, acks: int = 1) -> Any:
+    """Dispatch onto the broker loop, allowing `acks` broker acknowledgements; anything not
+    self-describing becomes a RuntimeError."""
     try:
-        return _get_runner().run_coro(coro)
+        return _get_runner().run_coro(coro, acks * ACTION_TIMEOUT + 1)
     except (ValueError, RuntimeError):
         raise
     except TimeoutError as e:
@@ -161,7 +163,8 @@ def subscribe(topic: str, qos: int = 0, broker: str = "") -> dict[str, Any]:
     if reason := filter_error(topic):
         raise ValueError(f"Invalid topic filter {topic!r}: {reason}")
     client = _get_client(broker)
-    subscribed = _run(client.subscribe(topic, _qos(qos)), f"Subscribe to '{topic}'")
+    # SUBACK, then UNSUBACK for the filters the new one covers.
+    subscribed = _run(client.subscribe(topic, _qos(qos)), f"Subscribe to '{topic}'", acks=2)
     return {"broker": client.name, "topic": topic, "subscriptions": subscribed}
 
 

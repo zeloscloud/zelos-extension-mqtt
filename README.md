@@ -65,7 +65,7 @@ Turn on TLS for a broker: its certificate and host name are verified against the
 
 ### Discovery
 
-Without a device map, every topic received on the subscribed filters is traced as an event named after the topic, each level sanitized (`sensors/temp/ambient`). A JSON object payload gives one field per key, nested keys joined with `_` (`fan_rpm`); a number, boolean or text payload is the field `value`. The first message on a topic fixes its fields; `list_topics` returns them as a device map ready to save.
+Without a device map, every topic received on the subscribed filters is traced as an event named after the topic, each level sanitized (`sensors/temp/ambient`). A JSON object payload gives one field per key, nested keys joined with `_` (`fan_rpm`); a number, boolean or text payload is the field `value`. The first message on a topic fixes its fields; `list_topics` returns them as a device map ready to save. As the MQTT specification requires, `#` and a leading `+` do not match `$` topics such as `$SYS/...`: add a filter that names them.
 
 ### Auto-configure
 

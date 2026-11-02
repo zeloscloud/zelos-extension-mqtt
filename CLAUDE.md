@@ -58,6 +58,7 @@ just package      # zelos extensions package . (needs Zelos CLI 0.1.12+ for the 
 - Wanted filters = `topics` (QoS 0) + every map topic (its `qos`) + the `subscribe` action's. `check_overlaps` refuses two wildcard filters that share topics with neither containing the other (exact topics are disjoint or contained, so only wildcard pairs are compared).
 - `subscriptions()` drops covered filters and gives the cover the highest QoS: brokers (amqtt, Mosquitto 2) deliver one copy per matching subscription, so a covered filter would record twice.
 - A received topic records into the most specific map filter: exact first, else the innermost of the matching wildcards (they form a chain once overlaps are refused). All entries on that one filter record.
+- Spec 4.7.2 is applied in `matches` / `covers` / `intersection` (aiomqtt's `Topic.matches` does not): a first-level `+` or `#` never reaches a `$` topic, so `#` neither receives, covers nor overlaps `$SYS/...`; such topics trace only under a filter that names them.
 - Unmapped topics are discovered: event = topic levels each through `sanitize_name(kind="event")`. Collisions (two topics, one event name; a map event's name) are not traced, warned once.
 
 ### Tracing
@@ -71,7 +72,7 @@ just package      # zelos extensions package . (needs Zelos CLI 0.1.12+ for the 
 
 - Free functions in `actions.py`, bound via `set_runner`. Optional `broker`: `ValueError` listing names when omitted with several; `get_status` / `list_topics` cover all.
 - Failure convention: **raise**. Input errors `ValueError`; not connected / not running `RuntimeError`; aiomqtt errors become `RuntimeError` via `_run`.
-- `publish` / `subscribe` dispatch via `MqttRunner.run_coro` onto the loop that owns the connection; no connect-per-action.
+- `publish` / `subscribe` dispatch via `MqttRunner.run_coro` onto the loop that owns the connection; no connect-per-action. The SDK runs each call on its own thread, so `subscribe` holds a per-broker lock (concurrent calls otherwise unsubscribed each other) and records the new cover once granted, before UNSUBSCRIBE of the covered ones; it may wait for two acknowledgements.
 - `auto_config(config)` is standalone (own `asyncio.run`); the schema's `ui:options.autoconfig` names it, keep in step. It connects (CONNECT/CONNACK, DISCONNECT) and subscribes to nothing. mDNS falls back to `InterfaceChoice.Default` where binding every interface fails (macOS: the system responder owns 127.0.0.1:5353).
 
 ### Connection
@@ -84,7 +85,8 @@ just package      # zelos extensions package . (needs Zelos CLI 0.1.12+ for the 
 
 - `MqttRunner` owns the one loop; signals via `loop.add_signal_handler` only set the stop event (Windows: `signal.signal` fallback); never `sys.exit` from a handler.
 - First contact is required unless `retry_unreachable_at_start`: one ERROR per broker naming the fix; `serve()` exits 1. Afterwards drops reconnect with backoff 3 s doubling to 60 s (reset on a connect).
-- Stop cancels every client; disconnects run concurrently under `SHUTDOWN_TIMEOUT` (3 s). A paho connect blocked in its executor thread (TCP 5 s, TLS handshake up to keepalive) can hold the process exit past that; the manifest grace is 10 s.
+- Stop cancels every client; disconnects run concurrently under `SHUTDOWN_TIMEOUT` (3 s). aiomqtt runs paho's blocking connect (TCP up to 5 s, TLS handshake up to keepalive) in the loop's default executor, which a cancel does not stop and `asyncio.run` / interpreter exit would join: the runner's loop gets `_DaemonExecutor` (daemon threads, nothing joined).
+- First contact waits on plain tasks, not a gather: a cancelled gather logs "exception was never retrieved" (an ERROR with a traceback, into the trace too).
 - A client task that ends (a bug) stops the runner and `serve()` exits 1.
 
 ### Demo broker

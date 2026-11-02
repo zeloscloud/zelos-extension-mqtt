@@ -9,12 +9,14 @@ loop: signals, the first-contact gate, action dispatch and bounded shutdown.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import json
 import logging
 import signal
 import socket
 import ssl
+import threading
 import time
 from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass, field
@@ -41,7 +43,7 @@ RECONNECT_MAX = 60.0
 #: Disconnects run concurrently under this bound: ~3 s in total.
 SHUTDOWN_TIMEOUT = 3.0
 HEALTH_SECONDS = 5.0
-#: Publish and subscribe wait this long for the broker's acknowledgement.
+#: Publish and subscribe wait this long for each acknowledgement from the broker.
 ACTION_TIMEOUT = 10.0
 
 SDK_DATATYPES = {
@@ -341,6 +343,7 @@ class BrokerClient:
 
         self._client: aiomqtt.Client | None = None
         self._active: dict[str, int] = {}  # subscribed on this connection
+        self._subscribing = asyncio.Lock()
         self._source: zelos_sdk.TraceSource | None = None
         self._event_prefix = ""
         self._events: dict[str, Any] = {}  # map event -> TraceSourceEvent
@@ -606,23 +609,32 @@ class BrokerClient:
         self.published += 1
 
     async def subscribe(self, topic: str, qos: int) -> list[str]:
-        """Add `topic` to the wanted filters for this run; returns the filters subscribed."""
-        client = self._require_client()
-        filters = {**self.filters, topic: max(qos, self.filters.get(topic, 0))}
-        check_overlaps(filters, "Topic filters")
-        wanted = subscriptions(filters)
-        new = [(f, q) for f, q in wanted.items() if self._active.get(f) != q]
-        if new:
-            granted = await client.subscribe(new, timeout=ACTION_TIMEOUT)
-            refused = [f for (f, _), code in zip(new, granted, strict=False) if _refused(code)]
-            if refused:
-                raise RuntimeError(f"The broker refused the subscription to {', '.join(refused)}")
-        gone = [f for f in self._active if f not in wanted]
-        if gone:
-            await client.unsubscribe(gone, timeout=ACTION_TIMEOUT)
-        self.filters, self._active = filters, wanted
-        logger.info("[%s] Subscribed to %s", self.name, _describe(wanted))
-        return list(wanted)
+        """Add `topic` to the wanted filters for this run; returns the filters subscribed.
+
+        One at a time: each reads the filters the last one left. The new cover is
+        recorded once the broker grants it, before the covered ones are dropped.
+        """
+        async with self._subscribing:
+            client = self._require_client()
+            filters = {**self.filters, topic: max(qos, self.filters.get(topic, 0))}
+            check_overlaps(filters, "Topic filters")
+            wanted = subscriptions(filters)
+            new = [(f, q) for f, q in wanted.items() if self._active.get(f) != q]
+            if new:
+                granted = await client.subscribe(new, timeout=ACTION_TIMEOUT)
+                refused = [f for (f, _), code in zip(new, granted, strict=False) if _refused(code)]
+                if refused:
+                    raise RuntimeError(
+                        f"The broker refused the subscription to {', '.join(refused)}"
+                    )
+            self.filters = filters
+            self._active = {**self._active, **dict(new)}
+            gone = [f for f in self._active if f not in wanted]
+            if gone:
+                await client.unsubscribe(gone, timeout=ACTION_TIMEOUT)
+            self._active = wanted
+            logger.info("[%s] Subscribed to %s", self.name, _describe(wanted))
+            return list(wanted)
 
     # ─── Introspection ──────────────────────────────────────────────────────
 
@@ -688,6 +700,30 @@ class BrokerClient:
         return {"events": events}
 
 
+class _DaemonExecutor(concurrent.futures.ThreadPoolExecutor):
+    """Each call on a daemon thread, not the pool's. aiomqtt runs paho's blocking connect in
+    the loop's default executor (TCP up to 5 s, the TLS handshake up to keepalive); a cancel
+    does not stop it, and asyncio.run and interpreter exit join pool threads, so a stalled
+    connect would hold the stop for that long. A ThreadPoolExecutor only because
+    `set_default_executor` takes nothing else."""
+
+    def submit(self, fn: Callable[..., Any], /, *args: Any, **kwargs: Any) -> Any:
+        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
+
+        def run() -> None:
+            if future.set_running_or_notify_cancel():
+                try:
+                    future.set_result(fn(*args, **kwargs))
+                except BaseException as e:
+                    future.set_exception(e)
+
+        threading.Thread(target=run, daemon=True, name="mqtt-connect").start()
+        return future
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        """Nothing to join: a connect still running dies with the process."""
+
+
 def _describe(filters: dict[str, int]) -> str:
     return ", ".join(filters) if len(filters) <= 10 else f"{len(filters)} topic filters"
 
@@ -720,6 +756,7 @@ class MqttRunner:
 
     async def _run_async(self) -> None:
         self._loop = asyncio.get_running_loop()
+        self._loop.set_default_executor(_DaemonExecutor())
         remove_signal_handlers = self._install_signal_handlers()
         tasks = [asyncio.create_task(c.run(), name=c.name) for c in self.clients.values()]
         try:
@@ -749,13 +786,18 @@ class MqttRunner:
         Returns:
             Whether to keep running
         """
-        first = asyncio.gather(*(c.contacted.wait() for c in self.clients.values()))
+        # Plain tasks, not a gather: a cancelled gather logs "exception was never retrieved".
         stop = asyncio.ensure_future(self._stop_event.wait())
+        waiting = {asyncio.ensure_future(c.contacted.wait()) for c in self.clients.values()}
         try:
-            await asyncio.wait({first, stop}, return_when=asyncio.FIRST_COMPLETED)
+            while waiting and not stop.done():
+                _, waiting = await asyncio.wait(
+                    waiting | {stop}, return_when=asyncio.FIRST_COMPLETED
+                )
+                waiting.discard(stop)
         finally:
-            first.cancel()
-            stop.cancel()
+            for future in waiting | {stop}:
+                future.cancel()
         if self._stop_event.is_set():
             return False
         down = [c for c in self.clients.values() if not c.ever_connected]

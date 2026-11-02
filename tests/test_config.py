@@ -14,7 +14,7 @@ from zelos_extension_mqtt import ACTION_PREFIX, actions
 from zelos_extension_mqtt.cli import app
 from zelos_extension_mqtt.client import node_value
 from zelos_extension_mqtt.constants import DEFAULT_PREFIX
-from zelos_extension_mqtt.mqtt_map import Node, NodeMap, subscriptions
+from zelos_extension_mqtt.mqtt_map import Node, NodeMap, check_overlaps, subscriptions
 
 from .conftest import ROOT
 
@@ -217,12 +217,18 @@ def test_the_most_specific_map_entry_records_a_topic():
     assert [n.name for _, n in node_map.match("plant/fan/speed")] == ["speed"]
     assert [n.name for _, n in node_map.match("plant/fan/temp")] == ["any"]
     assert node_map.match("other") == []
+    # Spec 4.7.2: a first-level wildcard never matches a `$` topic.
+    sys_map = NodeMap.from_dict({"events": {"all": [{"topic": "#", "name": "v"}]}})
+    assert sys_map.match("$SYS/broker/uptime") == []
 
 
 def test_covered_filters_subscribe_once_at_the_highest_qos():
     """A broker sends a copy per matching subscription; covered filters would record twice."""
     assert subscriptions({"#": 0, "a/b": 1, "x/+": 0, "x/y": 2}) == {"#": 2}
     assert subscriptions({"a/+": 0, "a/b": 1, "c": 0}) == {"a/+": 1, "c": 0}
+    # `#` does not receive `$SYS/...` (spec 4.7.2), so it covers none of it; nor do they overlap.
+    assert subscriptions({"#": 0, "$SYS/#": 0, "$SYS/uptime": 1}) == {"#": 0, "$SYS/#": 1}
+    check_overlaps(["+/status", "$SYS/#"], "Topic filters")
 
 
 @pytest.mark.parametrize(

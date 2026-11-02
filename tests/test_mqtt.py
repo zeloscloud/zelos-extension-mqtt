@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gc
 import json
+import logging
+import socket
+import threading
 import time
 
 import aiomqtt
@@ -13,7 +17,13 @@ import zelos_sdk
 
 from zelos_extension_mqtt import actions
 from zelos_extension_mqtt import client as client_mod
-from zelos_extension_mqtt.client import SHUTDOWN_TIMEOUT, BrokerClient, MqttRunner, node_value
+from zelos_extension_mqtt.client import (
+    SHUTDOWN_TIMEOUT,
+    BrokerClient,
+    MqttRunner,
+    node_value,
+    tls_context,
+)
 from zelos_extension_mqtt.demo.simulator import DemoServer
 from zelos_extension_mqtt.mqtt_map import NodeMap
 
@@ -169,6 +179,11 @@ async def test_actions_select_the_broker_publish_subscribe_and_stop_in_bounds(de
         await wait_until(lambda: "act/ping" in {t["topic"] for t in a.topics()})
         assert a.status()["published"] == 1 and "act/ping" not in {t["topic"] for t in b.topics()}
         await publish(port, ("act/ping", ""), retain=True)
+        # Concurrent calls (the SDK runs each on its own thread) both stick.
+        await asyncio.gather(
+            call(actions.subscribe, "r1/#", broker="b"), call(actions.subscribe, "r2/#", broker="b")
+        )
+        assert set(b.status()["subscriptions"]) == {"device/#", "r1/#", "r2/#"}
 
         started = time.monotonic()
     elapsed = time.monotonic() - started
@@ -221,3 +236,25 @@ async def test_retry_unreachable_at_start_connects_later_and_reconnects(monkeypa
         f"Broker 'late' (127.0.0.1:{port}): cannot connect: connection refused; "
         "check Host and Port; retrying"
     )
+
+
+def test_stop_is_bounded_while_a_tls_connect_stalls(caplog):
+    """paho's blocking connect (here a TLS handshake no one answers, up to keepalive) must
+    not hold the stop, and a stop during first contact logs nothing."""
+    with socket.socket() as silent:
+        silent.bind(("127.0.0.1", 0))
+        silent.listen()  # accepts TCP, never speaks TLS
+        port = silent.getsockname()[1]
+        client = BrokerClient("stalled", "localhost", port, keepalive=30, tls=tls_context())
+        client.start(None)
+        runner = MqttRunner([client])
+        thread = threading.Thread(target=runner.run)
+        thread.start()
+        time.sleep(0.5)
+        started = time.monotonic()
+        runner.stop()
+        thread.join(10)
+        elapsed = time.monotonic() - started
+    gc.collect()  # an unretrieved future exception is logged when collected
+    assert not thread.is_alive() and elapsed < SHUTDOWN_TIMEOUT
+    assert [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR] == []
