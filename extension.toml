@@ -1,5 +1,5 @@
 name = "MQTT"
-version = "0.1.1"
+version = "0.2.0"
 description = "Subscribe to topics on an MQTT broker and record JSON, number, boolean or text payloads as typed signals. Publish messages at QoS 0 to 2 and add topics while running. Built-in demo broker."
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-mqtt"
