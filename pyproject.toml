@@ -1,16 +1,26 @@
 [project]
 name = "zelos-extension-mqtt"
 version = "0.2.0"
-description = "Subscribe to topics on an MQTT broker and record JSON, number, boolean or text payloads as typed signals. Publish messages at QoS 0 to 2 and add topics while running. Built-in demo broker."
+description = "Trace every topic on one or more MQTT brokers, or map topics to typed signals with a device map. TLS and client certificates, publish and subscribe actions, auto-configure, built-in demo broker."
 authors = [{ name = "Zelos", email = "support@zeloscloud.io" }]
 readme = "README.md"
 requires-python = ">=3.11"
 keywords = ["zelos", "extension", "mqtt", "iot"]
 dependencies = [
+    # 0.0.13 floor: hidden and standalone actions (auto_config is for the config
+    # form and Zelos AI only) and sanitize_name(kind=...). Older SDKs accept
+    # `hidden=` and silently drop it.
     "zelos-sdk>=0.0.13",
+    # 2.x API: the `Client.messages` iterator, a reusable client, `tls_context`.
+    # Every floor here is tested: the suite passes with exactly these versions.
     "aiomqtt>=2.3.0",
+    # Demo broker; 0.11.2: the `plugins` config section, which loads anonymous auth
+    # only, without deprecation warnings.
     "amqtt>=0.11.2",
     "rich-click>=1.8.0",
+    # mDNS browse for auto_config. LGPL-2.1; wheels for macOS/Linux/Windows and a
+    # pure-Python fallback, so no native build on install.
+    "zeroconf>=0.136.0",
 ]
 
 [project.urls]
@@ -25,6 +35,8 @@ dev = [
     "pytest-asyncio>=1.3.0",
     "pre-commit>=4.6.2",
     "ruff>=0.16.10",
+    # Test CA and certificates for the TLS tests (X.509 builder API).
+    "cryptography>=42.0.0",
 ]
 
 [build-system]
@@ -40,10 +52,11 @@ packages = ["zelos_extension_mqtt"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--log-cli-level=INFO"
+asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
-target-version = 'py311'
+target-version = "py311"
 line-length = 100
 
 [tool.ruff.lint]
@@ -57,3 +70,9 @@ select = [
     "C4",   # flake8-comprehensions
     "PTH",  # flake8-use-pathlib
 ]
+ignore = [
+    "B008",   # function call in defaults (common in decorators)
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"

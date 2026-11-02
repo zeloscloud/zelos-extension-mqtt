@@ -1,12 +1,15 @@
 """Demo MQTT broker and IoT device simulator.
 
-Runs an embedded MQTT broker (amqtt) and publishes realistic sensor data
-that changes over time. Used for demo mode and integration tests.
+Runs an embedded MQTT broker (amqtt) and publishes sensor data that changes over
+time: the topics `demo_device.json` maps, a JSON object topic the map leaves to
+discovery (`device/status`), and a retained one (`device/info`). Used by demo
+mode, `demo-server` and the tests.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import math
@@ -69,7 +72,14 @@ class IoTSimulator:
             "device/uptime": uptime,
             "device/errors": self.error_count,
             "device/setpoint": round(self.setpoint, 1),
+            "device/status": {
+                "mode": "cooling" if ambient_temp > self.setpoint else "idle",
+                "fan": {"rpm": round(900 + 400 * load_factor, 1), "on": ambient_temp > 21.0},
+            },
         }
+
+    #: Published once, retained: a subscriber gets it on subscribe.
+    INFO = {"model": "SIM-1", "firmware": "1.2.0"}
 
 
 class DemoServer:
@@ -92,6 +102,7 @@ class DemoServer:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._ready = threading.Event()
         self._stop_event: asyncio.Event | None = None
+        self._error: Exception | None = None
         self.simulator = IoTSimulator()
 
     def start(self) -> None:
@@ -103,6 +114,11 @@ class DemoServer:
         self._thread.start()
         if not self._ready.wait(timeout=10.0):
             raise RuntimeError("Demo server failed to start within 10s")
+        if self._error is not None:
+            raise OSError(
+                f"Could not start the demo broker on {self.host}:{self.port} ({self._error}); "
+                "one may already be running there"
+            )
         logger.info(f"Demo MQTT server ready on {self.host}:{self.port}")
 
     def _run(self) -> None:
@@ -134,8 +150,13 @@ class DemoServer:
         }
 
         broker = Broker(broker_config)
-        await broker.start()
-        self._ready.set()
+        try:
+            await broker.start()
+        except Exception as e:
+            self._error = e
+            return
+        finally:
+            self._ready.set()
 
         try:
             await self._publish_loop()
@@ -145,6 +166,7 @@ class DemoServer:
     async def _publish_loop(self) -> None:
         """Connect to broker and publish simulated sensor data."""
         async with aiomqtt.Client(self.host, self.port) as client:
+            await client.publish("device/info", json.dumps(self.simulator.INFO), retain=True)
             while not self._stop_event.is_set():
                 values = self.simulator.update()
                 for topic, value in values.items():
@@ -160,7 +182,8 @@ class DemoServer:
     def stop(self) -> None:
         """Stop the demo server."""
         if self._loop and self._stop_event:
-            self._loop.call_soon_threadsafe(self._stop_event.set)
+            with contextlib.suppress(RuntimeError):  # the loop already ended: start failed
+                self._loop.call_soon_threadsafe(self._stop_event.set)
         if self._thread:
             self._thread.join(timeout=5.0)
         logger.info("Demo MQTT server stopped")

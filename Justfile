@@ -101,10 +101,14 @@ run:
 lock:
     uv lock
 
-# Run the agent runtime in demo mode
-dev-demo:
-    uv run python main.py --demo
-
-# Run standalone demo broker
+# Run against the built-in broker and simulator (no broker required)
 demo:
     uv run python main.py demo
+
+# Run the standalone broker and simulator (127.0.0.1:11883); see `main.py demo-server --help`
+sim *ARGS:
+    uv run python main.py demo-server {{ARGS}}
+
+# Interop against Mosquitto in Docker (plain, TLS, mutual TLS); manual, pre-release
+e2e-interop *ARGS:
+    ZELOS_INTEROP=1 uv run pytest tests/test_interop.py {{ARGS}}

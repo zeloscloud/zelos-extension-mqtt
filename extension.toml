@@ -1,11 +1,11 @@
 name = "MQTT"
 version = "0.2.0"
-description = "Subscribe to topics on an MQTT broker and record JSON, number, boolean or text payloads as typed signals. Publish messages at QoS 0 to 2 and add topics while running. Built-in demo broker."
+description = "Trace every topic on one or more MQTT brokers, or map topics to typed signals with a device map. TLS and client certificates, publish and subscribe actions, auto-configure, built-in demo broker."
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-mqtt"
 # At most 20 keywords and 10 categories. Marketplace search matches both, the name, description,
 # author and repository. Zelos AI sees the name, description and keywords, not the categories.
-keywords = ["mqtt", "iot", "messaging", "broker", "pub sub", "pubsub", "publish subscribe", "qos", "telemetry", "sensor", "message broker", "m2m", "json payload", "device map", "username password", "embedded broker"]
+keywords = ["mqtt", "iot", "messaging", "broker", "pub sub", "pubsub", "publish subscribe", "qos", "telemetry", "sensor", "message broker", "m2m", "json payload", "device map", "tls", "mtls", "embedded broker"]
 categories = ["IoT", "Industrial", "Networking"]
 icon = "assets/icon.svg"
 readme = "README.md"
