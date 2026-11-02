@@ -11,6 +11,7 @@ import asyncio
 import inspect
 import json
 import socket
+import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -530,6 +531,46 @@ class TestDemoServerIntegration:
                 assert isinstance(value, float), f"{node_name} should be float, got {type(value)}"
             elif "int" in node.datatype:
                 assert isinstance(value, int), f"{node_name} should be int, got {type(value)}"
+
+
+class _ProactorLikeLoop(asyncio.SelectorEventLoop):
+    """Windows' default loop, as aiomqtt sees it: no add_reader or add_writer."""
+
+    def add_reader(self, *_args):
+        raise NotImplementedError
+
+    def add_writer(self, *_args):
+        raise NotImplementedError
+
+
+class _ProactorLikePolicy(asyncio.DefaultEventLoopPolicy):
+    def new_event_loop(self):
+        return _ProactorLikeLoop()
+
+
+def test_demo_and_client_run_where_the_default_loop_has_no_add_reader(node_map):
+    """Where the default loop cannot run aiomqtt (Windows), the demo and the client still work."""
+    prior = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(_ProactorLikePolicy())
+    server = DemoServer(host="127.0.0.1", port=_find_free_port(), publish_interval=0.1)
+    try:
+        server.start()
+        with patch("zelos_sdk.TraceSourceCacheLast"), patch("zelos_sdk.TraceEventFieldMetadata"):
+            client = MqttClient(
+                host=server.host, port=server.port, node_map=node_map, poll_interval=0.5
+            )
+            client.start()
+            runner = threading.Thread(target=client.run, daemon=True)
+            runner.start()
+            deadline = time.monotonic() + 5.0
+            while len(client._cache) < 5 and time.monotonic() < deadline:
+                time.sleep(0.05)
+            client.stop()
+            runner.join(timeout=5.0)
+        assert len(client._cache) >= 5, f"Only cached {len(client._cache)} values"
+    finally:
+        server.stop()
+        asyncio.set_event_loop_policy(prior)
 
 
 # =============================================================================

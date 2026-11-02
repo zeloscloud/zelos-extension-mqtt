@@ -107,7 +107,8 @@ class DemoServer:
 
     def _run(self) -> None:
         """Run broker + publisher event loop."""
-        self._loop = asyncio.new_event_loop()
+        # The publisher is an aiomqtt client: a selector loop, as in MqttClient.run.
+        self._loop = asyncio.SelectorEventLoop()
         asyncio.set_event_loop(self._loop)
         self._stop_event = asyncio.Event()
 
