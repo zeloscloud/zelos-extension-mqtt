@@ -52,6 +52,12 @@ def test_action_names_and_flags():
         "publish": (False, False),
         "subscribe": (False, False),
     }
+    # Only the topic is required; a caller that omits qos / retain gets the defaults.
+    required = {
+        name: {f.name for f in getattr(actions, name)._action.fields if f.required}
+        for name in ("publish", "subscribe")
+    }
+    assert required == {"publish": {"topic"}, "subscribe": {"topic"}}
 
 
 def write(tmp_path, name: str, data) -> str:

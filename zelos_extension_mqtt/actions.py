@@ -132,8 +132,8 @@ def list_topics(broker: str = "") -> dict[str, Any]:
 @zelos_sdk.action.text(
     "payload", title="Payload", required=False, default="", description='e.g. {"value": 23.5}'
 )
-@zelos_sdk.action.integer("qos", title="QoS", minimum=0, maximum=2, default=0)
-@zelos_sdk.action.boolean("retain", title="Retain", default=False)
+@zelos_sdk.action.integer("qos", title="QoS", minimum=0, maximum=2, default=0, required=False)
+@zelos_sdk.action.boolean("retain", title="Retain", default=False, required=False)
 def publish(
     topic: str, payload: str = "", qos: int = 0, retain: bool = False, broker: str = ""
 ) -> dict[str, Any]:
@@ -158,7 +158,7 @@ def publish(
 )
 @_broker_field
 @zelos_sdk.action.text("topic", title="Topic Filter", description="e.g. sensors/# or $SYS/#")
-@zelos_sdk.action.integer("qos", title="QoS", minimum=0, maximum=2, default=0)
+@zelos_sdk.action.integer("qos", title="QoS", minimum=0, maximum=2, default=0, required=False)
 def subscribe(topic: str, qos: int = 0, broker: str = "") -> dict[str, Any]:
     if reason := filter_error(topic):
         raise ValueError(f"Invalid topic filter {topic!r}: {reason}")
