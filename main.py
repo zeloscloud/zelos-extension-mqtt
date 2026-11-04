@@ -1,107 +1,107 @@
-"""Zelos MQTT extension - MQTT broker monitoring and IoT data collection."""
+#!/usr/bin/env python3
+"""Zelos MQTT Extension - CLI entry point.
+
+Modes:
+
+1. App mode (default): configuration comes from the Zelos App
+2. Demo mode: built-in broker and simulated sensors, no broker needed
+
+Examples:
+    uv run main.py                          # app mode
+    uv run main.py demo                     # built-in broker and simulator
+    uv run main.py --file run.trz demo      # ... and record to a .trz file
+    uv run main.py demo-server --port 1883  # standalone broker and simulator
+"""
 
 from __future__ import annotations
 
 import logging
 import signal
-import sys
+import threading
+import time
 from pathlib import Path
-from types import FrameType
-from typing import TYPE_CHECKING
 
 import rich_click as click
 
-if TYPE_CHECKING:
-    from zelos_extension_mqtt.client import MqttClient
+from zelos_extension_mqtt import ACTION_PREFIX as _ACTION_PREFIX
+from zelos_extension_mqtt.cli import app as app_mode
 
-click.rich_click.USE_RICH_MARKUP = True
-click.rich_click.USE_MARKDOWN = True
-click.rich_click.SHOW_ARGUMENTS = True
-click.rich_click.GROUP_ARGUMENTS_OPTIONS = True
+#: Re-exported so a packaging-time action inventory - which reads this entry
+#: module - sees the same namespace the live registration uses. See the
+#: definition in `zelos_extension_mqtt/__init__.py`.
+ACTION_PREFIX = _ACTION_PREFIX
 
+# UTC ISO 8601 with ms, matching the SDK's Rust tracing lines in the same log stream
+logging.Formatter.converter = time.gmtime
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s.%(msecs)03dZ %(levelname)5s %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
-_client: MqttClient | None = None
-
-
-def shutdown_handler(signum: int, frame: FrameType | None) -> None:
-    """Handle graceful shutdown on SIGTERM or SIGINT."""
-    logger.info("Shutting down...")
-    if _client:
-        _client.stop()
-    sys.exit(0)
+# aiomqtt logs every packet through paho, and amqtt every connection: only DEBUG
+# re-opens them (cli/app.apply_log_level).
+for _name in app_mode.CHATTY_LOGGERS:
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 
 @click.group(invoke_without_command=True)
-@click.option("--demo", is_flag=True, help="Run in demo mode with embedded broker and simulator")
+@click.option("--demo", is_flag=True, help="Run against the built-in broker and simulator")
 @click.option(
     "--file",
     type=click.Path(path_type=Path),
     default=None,
     is_flag=False,
     flag_value=".",
-    help="Record trace to .trz file",
+    help="Record the trace to a .trz file (a UTC-named one when no name is given)",
 )
 @click.pass_context
 def cli(ctx: click.Context, demo: bool, file: Path | None) -> None:
-    """MQTT broker monitoring and IoT data collection.
+    """Zelos MQTT Extension - trace MQTT topics, publish and subscribe.
 
-    Subscribes to MQTT topics and streams data as Zelos trace events.
-    Configure via Zelos extension settings or use --demo for testing.
+    Without a subcommand this starts in app mode using the configuration saved
+    by the Zelos App. Use --demo or the 'demo' subcommand for the built-in broker
+    and simulator.
     """
-    if ctx.invoked_subcommand is not None:
-        return
-
-    run_app_mode(demo=demo, trace_file=file)
-
-
-def run_app_mode(demo: bool = False, trace_file: Path | None = None) -> None:
-    """Run in app mode — delegates to app runner for SDK init and client setup."""
-    signal.signal(signal.SIGTERM, shutdown_handler)
-    signal.signal(signal.SIGINT, shutdown_handler)
-
-    from zelos_extension_mqtt.cli.app import run_app_mode as _run_app_mode
-
-    _run_app_mode(demo=demo, trace_file=trace_file, set_client=_set_client)
-
-
-def _set_client(client: MqttClient) -> None:
-    """Store client reference for shutdown handler."""
-    global _client
-    _client = client
+    if ctx.invoked_subcommand is None:
+        app_mode.run_app_mode(demo=demo, trace_file=file)
 
 
 @cli.command()
-@click.option("--host", default="127.0.0.1", help="Broker host")
-@click.option("--port", default=11883, type=int, help="Broker port")
-@click.option("--interval", default=0.5, type=float, help="Publish interval in seconds")
-def demo(host: str, port: int, interval: float) -> None:
-    """Run standalone demo broker with simulated IoT data."""
+@click.pass_context
+def demo(ctx: click.Context) -> None:
+    """Run against the built-in broker and simulator.
+
+    Starts an MQTT broker on 127.0.0.1:11883 publishing simulated temperature,
+    humidity, pressure, power and device topics, then traces it as broker `demo`.
+    No broker required.
+    """
+    app_mode.run_app_mode(demo=True, trace_file=ctx.parent.params["file"])
+
+
+@cli.command("demo-server")
+@click.option("--host", default="127.0.0.1", show_default=True, help="Bind address")
+@click.option("--port", type=int, default=app_mode.DEMO_PORT, show_default=True, help="TCP port")
+@click.option(
+    "--interval", type=float, default=0.5, show_default=True, help="Seconds between publishes"
+)
+def demo_server(host: str, port: int, interval: float) -> None:
+    """Run the built-in broker and simulator standalone until Ctrl-C."""
     from zelos_extension_mqtt.demo.simulator import DemoServer
 
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
     server = DemoServer(host=host, port=port, publish_interval=interval)
-    server.start()
-    click.echo(f"Demo MQTT broker running on {host}:{port}")
-    click.echo("Press Ctrl+C to stop")
-
-    def shutdown(signum, frame):
-        server.stop()
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, shutdown)
-    signal.signal(signal.SIGINT, shutdown)
-
     try:
-        signal.pause()
-    except AttributeError:
-        import time
-
-        while True:
-            time.sleep(1)
+        server.start()
+    except OSError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Demo MQTT broker on {host}:{port}; Ctrl-C to stop")
+    while not stop.wait(0.5):  # a timed wait, so signals land on Windows too
+        pass
+    server.stop()
 
 
 if __name__ == "__main__":

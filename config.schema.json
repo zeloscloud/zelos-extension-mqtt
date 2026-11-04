@@ -1,78 +1,224 @@
 {
+  "$comment": "MQTT extension configuration schema. See https://docs.zeloscloud.io/sdk/how-to/develop-extensions/#configuration",
   "type": "object",
-  "properties": {
-    "demo": {
-      "type": "boolean",
-      "default": false,
-      "title": "Demo Mode",
-      "description": "Run with embedded broker and simulated IoT sensors",
-      "ui:widget": "toggle"
-    },
-    "host": {
-      "type": "string",
-      "default": "localhost",
-      "title": "Broker Host",
-      "ui:placeholder": "localhost or IP address"
-    },
-    "port": {
-      "type": "integer",
-      "default": 1883,
-      "minimum": 1,
-      "maximum": 65535,
-      "title": "Broker Port"
-    },
-    "client_id": {
-      "type": "string",
-      "default": "",
-      "title": "Client ID",
-      "description": "MQTT client identifier (leave empty for auto-generated)",
-      "ui:placeholder": "my-zelos-client"
-    },
-    "username": {
-      "type": "string",
-      "default": "",
-      "title": "Username",
-      "description": "Broker authentication username"
-    },
-    "password": {
-      "type": "string",
-      "default": "",
-      "title": "Password",
-      "description": "Broker authentication password",
-      "ui:widget": "password"
-    },
-    "device_map_file": {
-      "type": "string",
-      "title": "Device Map File",
-      "description": "JSON file defining MQTT topics to subscribe to",
-      "ui:widget": "file-picker",
-      "ui:options": {
-        "accept": ".json"
-      }
-    },
-    "poll_interval": {
-      "type": "number",
-      "default": 1.0,
-      "minimum": 0.1,
-      "maximum": 60.0,
-      "title": "Log Interval (seconds)",
-      "description": "How often to flush cached MQTT values to the trace"
-    },
-    "log_level": {
-      "type": "string",
-      "enum": ["DEBUG", "INFO", "WARNING", "ERROR"],
-      "default": "INFO",
-      "title": "Log Level"
-    }
+  "title": "MQTT Configuration",
+  "description": "Configure MQTT broker connections and the topics traced",
+  "ui:options": {
+    "autoconfig": "MQTT/auto_config"
   },
-  "allOf": [
-    {
-      "if": {
-        "properties": { "demo": { "const": false } }
+  "properties": {
+    "brokers": {
+      "type": "array",
+      "title": "Brokers",
+      "description": "MQTT brokers to trace. Click 'Add' to add a broker, or use Auto-configure to check the brokers here (none: it looks for brokers on this machine).",
+      "default": [],
+      "items": {
+        "type": "object",
+        "title": "Broker",
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Label this broker appears under in the trace and the `broker` parameter of the actions. Defaults to the host (e.g. localhost, 192_168_1_10).",
+            "default": "",
+            "ui:placeholder": "defaults to host"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host",
+            "description": "Broker host name or IP address",
+            "default": "localhost",
+            "ui:placeholder": "localhost or 192.168.1.100"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port",
+            "description": "1883 is plain MQTT, 8883 MQTT over TLS",
+            "default": 1883,
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "topics": {
+            "type": "array",
+            "title": "Topics",
+            "description": "Topic filters to subscribe to (`+` one level, `#` the rest). Without a device map every topic received is traced as an event named after it; a device map's topics are subscribed too, and traced as its events. Clear to trace only the device map's topics.",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "#"
+            ]
+          },
+          "device_map_file": {
+            "type": "string",
+            "title": "Device Map File",
+            "description": "JSON file mapping topics to typed, named fields grouped into events. Leave empty to trace every topic as received.",
+            "default": "",
+            "ui:widget": "file-picker",
+            "ui:options": {
+              "accept": ".json"
+            }
+          },
+          "client_id": {
+            "type": "string",
+            "title": "Client ID",
+            "description": "MQTT client identifier. Leave empty for a generated one.",
+            "default": "",
+            "ui:placeholder": "generated"
+          },
+          "tls": {
+            "type": "boolean",
+            "title": "TLS",
+            "description": "Connect over TLS, verifying the broker's certificate and host name. A failed check stops the connection; it never falls back to plain MQTT.",
+            "default": false,
+            "ui:widget": "toggle"
+          }
+        },
+        "required": [
+          "host"
+        ],
+        "dependencies": {
+          "tls": {
+            "oneOf": [
+              {
+                "properties": {
+                  "tls": {
+                    "enum": [
+                      false
+                    ]
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "tls": {
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "ca_file": {
+                    "type": "string",
+                    "title": "CA File",
+                    "description": "CA certificate (PEM) that signed the broker's certificate. Leave empty to use Advanced > CA File, else the system trust store.",
+                    "default": "",
+                    "ui:widget": "file-picker",
+                    "ui:options": {
+                      "accept": ".pem,.crt,.cer"
+                    }
+                  },
+                  "cert_file": {
+                    "type": "string",
+                    "title": "Client Certificate",
+                    "description": "Client certificate (PEM) the broker maps to a user (mutual TLS). Leave empty to use Advanced > Client Certificate. Set together with Client Key.",
+                    "default": "",
+                    "ui:widget": "file-picker",
+                    "ui:options": {
+                      "accept": ".pem,.crt,.cer"
+                    }
+                  },
+                  "key_file": {
+                    "type": "string",
+                    "title": "Client Key",
+                    "description": "Unencrypted private key (PEM) for the client certificate.",
+                    "default": "",
+                    "ui:widget": "file-picker",
+                    "ui:options": {
+                      "accept": ".pem,.key"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "ui:order": [
+          "name",
+          "host",
+          "port",
+          "topics",
+          "device_map_file",
+          "client_id",
+          "tls",
+          "*"
+        ]
+      }
+    },
+    "advanced": {
+      "type": "object",
+      "title": "Advanced",
+      "description": "Settings shared by every broker, and the defaults a broker inherits.",
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "title": "Prefix",
+          "description": "Leading trace source every broker publishes under, so events read '<prefix>/<broker>/<event>'. Clear it to give each broker its own trace source with unprefixed events.",
+          "default": "MQTT",
+          "ui:placeholder": "MQTT",
+          "ui:emptyValue": ""
+        },
+        "log_level": {
+          "type": "string",
+          "title": "Log Level",
+          "description": "Logging verbosity",
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARNING",
+            "ERROR"
+          ],
+          "default": "INFO"
+        },
+        "retry_unreachable_at_start": {
+          "type": "boolean",
+          "title": "Retry Unreachable at Start",
+          "description": "Off: a broker that cannot be connected at start stops the extension. On: it logs an ERROR and is retried like a dropped connection while the other brokers trace.",
+          "default": false,
+          "ui:widget": "toggle"
+        },
+        "keepalive": {
+          "type": "integer",
+          "title": "Keepalive (seconds)",
+          "description": "MQTT keepalive: the broker drops a client silent for 1.5x this, and the client a broker that does not answer its pings.",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "ca_file": {
+          "type": "string",
+          "title": "CA File",
+          "description": "Default CA certificate (PEM) for TLS brokers that leave theirs empty. Empty: the system trust store.",
+          "default": "",
+          "ui:widget": "file-picker",
+          "ui:options": {
+            "accept": ".pem,.crt,.cer"
+          }
+        },
+        "cert_file": {
+          "type": "string",
+          "title": "Client Certificate",
+          "description": "Default client certificate (PEM) for TLS brokers that leave theirs empty. Set together with Client Key.",
+          "default": "",
+          "ui:widget": "file-picker",
+          "ui:options": {
+            "accept": ".pem,.crt,.cer"
+          }
+        },
+        "key_file": {
+          "type": "string",
+          "title": "Client Key",
+          "description": "Unencrypted private key (PEM) for the default client certificate.",
+          "default": "",
+          "ui:widget": "file-picker",
+          "ui:options": {
+            "accept": ".pem,.key"
+          }
+        }
       },
-      "then": {
-        "required": ["host", "port"]
+      "additionalProperties": false,
+      "default": {},
+      "ui:options": {
+        "collapsed": true
       }
     }
-  ]
+  }
 }
