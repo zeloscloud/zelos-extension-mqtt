@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 Saved settings from 0.2.0 stop the extension with one `Config format changed` line: reconfigure it.
 
