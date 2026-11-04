@@ -55,19 +55,31 @@ async def publish(port: int, *messages: tuple[str, bytes | str], retain: bool = 
 
 async def test_every_message_is_traced_at_its_receive_time(tmp_path, demo_broker):
     """No last-value flush: a burst of 50 on a (wildcard) mapped and an unmapped topic is
-    50 rows each."""
-    node_map = NodeMap.from_dict({"events": {"env": [{"topic": "burst/+/temp", "name": "temp"}]}})
+    50 rows each. A mapped row carries the event's other fields at their last value."""
+    node_map = NodeMap.from_dict(
+        {
+            "events": {
+                "env": [
+                    {"topic": "burst/+/temp", "name": "temp"},
+                    {"topic": "burst/hum", "name": "hum"},
+                ]
+            }
+        }
+    )
     plant = BrokerClient("plant", "127.0.0.1", demo_broker.port, ["burst/#"], node_map)
     trace = tmp_path / "burst.trz"
     with zelos_sdk.TraceWriter(str(trace)):
         async with running(plant, prefix="Burst"):
+            await publish(demo_broker.port, ("burst/hum", "7"))
+            await wait_until(lambda: plant.messages >= 1)
             await publish(
                 demo_broker.port,
                 *[(t, str(i)) for i in range(1, 51) for t in ("burst/a/temp", "burst/raw")],
             )
-            await wait_until(lambda: plant.messages >= 100)
+            await wait_until(lambda: plant.messages >= 101)
     recorded = read_trace(trace)
-    assert recorded["Burst/plant/env"]["temp"] == [float(i) for i in range(1, 51)]
+    assert recorded["Burst/plant/env"]["temp"] == [None] + [float(i) for i in range(1, 51)]
+    assert recorded["Burst/plant/env"]["hum"] == [7.0] * 51
     assert recorded["Burst/plant/burst/raw"]["value"] == [float(i) for i in range(1, 51)]
     stamps = recorded["Burst/plant/burst/raw"]["time_ns"]
     assert stamps == sorted(stamps) and stamps[-1] - stamps[0] < 5e9

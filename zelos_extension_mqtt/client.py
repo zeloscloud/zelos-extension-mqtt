@@ -347,6 +347,7 @@ class BrokerClient:
         self._source: zelos_sdk.TraceSource | None = None
         self._event_prefix = ""
         self._events: dict[str, Any] = {}  # map event -> TraceSourceEvent
+        self._last: dict[str, dict[str, Any]] = {}  # map event -> its fields' last values
         self._health: Any = None
         self._discovered: dict[str, _Discovered] = {}  # discovery event name -> its topic
         self._seen: dict[str, _Seen] = {}
@@ -418,6 +419,9 @@ class BrokerClient:
     def _log_mapped(
         self, topic: str, entries: list[tuple[str, Node]], text: str, received_ns: int
     ) -> None:
+        """One row per event the topic maps into, every field carried: the ones this
+        message sets, the rest at their last value this session (as OPC UA does), so a
+        latest-value read of the event is whole rather than the newest topic alone."""
         rows: dict[str, dict[str, Any]] = {}
         for event, node in entries:
             try:
@@ -433,7 +437,9 @@ class BrokerClient:
                 )
         for event, values in rows.items():
             if values:
-                self._events[event].log_at(received_ns, **values)
+                last = self._last.setdefault(event, {})
+                last.update(values)
+                self._events[event].log_at(received_ns, **last)
 
     def _log_discovered(self, topic: str, text: str, received_ns: int) -> str:
         """Log an unmapped topic; returns its event name, "" when it is not traced."""
