@@ -54,7 +54,7 @@ zelos-extension-mqtt/
 │       └── demo_device.json        # Demo device map
 ├── tests/                          # See CLAUDE.md for what each file covers
 ├── assets/
-│   └── icon.svg                    # Marketplace icon
+│   └── icon.png                    # Marketplace icon
 └── .github/
     ├── workflows/
     │   ├── CI.yml

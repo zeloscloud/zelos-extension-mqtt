@@ -7,7 +7,7 @@ repository = "https://github.com/zeloscloud/zelos-extension-mqtt"
 # author and repository. Zelos AI sees the name, description and keywords, not the categories.
 keywords = ["mqtt", "iot", "messaging", "broker", "pub sub", "pubsub", "publish subscribe", "qos", "telemetry", "sensor", "message broker", "m2m", "json payload", "device map", "tls", "mtls", "embedded broker"]
 categories = ["IoT", "Industrial", "Networking"]
-icon = "assets/icon.svg"
+icon = "assets/icon.png"
 readme = "README.md"
 
 [zelos]
