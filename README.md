@@ -14,6 +14,8 @@ A Zelos extension for MQTT. Trace every topic on one or more brokers as it arriv
 
 ## Quick Start
 
+[![Install the MQTT extension, add a broker by its address, start it and plot a discovered topic field](assets/howto/quickstart/quickstart.avif)](assets/howto/quickstart/quickstart.mp4)
+
 From the CLI, on the agent that can reach the broker:
 
 ```bash
