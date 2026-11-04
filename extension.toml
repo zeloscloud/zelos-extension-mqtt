@@ -1,5 +1,5 @@
 name = "MQTT"
-version = "0.2.0"
+version = "0.3.1"
 description = "Trace every topic on one or more MQTT brokers, or map topics to typed signals with a device map. TLS and client certificates, publish and subscribe actions, auto-configure, built-in demo broker."
 author = "Zelos"
 repository = "https://github.com/zeloscloud/zelos-extension-mqtt"
