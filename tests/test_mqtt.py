@@ -238,6 +238,44 @@ async def test_retry_unreachable_at_start_connects_later_and_reconnects(monkeypa
     )
 
 
+class _ProactorLikeLoop(asyncio.SelectorEventLoop):
+    """Windows' default loop, as aiomqtt sees it: no add_reader or add_writer."""
+
+    def add_reader(self, *_args):
+        raise NotImplementedError
+
+    def add_writer(self, *_args):
+        raise NotImplementedError
+
+
+class _ProactorLikePolicy(asyncio.DefaultEventLoopPolicy):
+    def new_event_loop(self):
+        return _ProactorLikeLoop()
+
+
+def test_runner_and_demo_work_where_the_default_loop_has_no_add_reader():
+    """Where the default loop cannot run aiomqtt (Windows), the runner and the demo still do."""
+    prior = asyncio.get_event_loop_policy()
+    asyncio.set_event_loop_policy(_ProactorLikePolicy())
+    server = DemoServer(port=free_port(), publish_interval=0.1)
+    try:
+        server.start()
+        client = BrokerClient("w", "127.0.0.1", server.port, ["sensors/#"])
+        client.start(None)
+        runner = MqttRunner([client])
+        thread = threading.Thread(target=runner.run)
+        thread.start()
+        deadline = time.monotonic() + 5.0
+        while client.messages < 5 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        runner.stop()
+        thread.join(5.0)
+        assert client.messages >= 5 and not thread.is_alive()
+    finally:
+        server.stop()
+        asyncio.set_event_loop_policy(prior)
+
+
 def test_stop_is_bounded_while_a_tls_connect_stalls(caplog):
     """paho's blocking connect (here a TLS handshake no one answers, up to keepalive) must
     not hold the stop, and a stop during first contact logs nothing."""

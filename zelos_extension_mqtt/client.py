@@ -762,7 +762,9 @@ class MqttRunner:
 
     def run(self) -> None:
         """Run every client until shutdown (blocking)."""
-        asyncio.run(self._run_async())
+        # aiomqtt needs add_reader/add_writer, which Windows' default proactor loop lacks.
+        with asyncio.Runner(loop_factory=asyncio.SelectorEventLoop) as runner:
+            runner.run(self._run_async())
 
     async def _run_async(self) -> None:
         self._loop = asyncio.get_running_loop()
